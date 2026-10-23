@@ -71,6 +71,7 @@ internal class AgentRuntimeRunExecutor(
         val archivedEvents = AgentRunArchiveStore.createEventBuffer(request.handoff)
         var entrySurfaceGuard: EntrySurfaceGuard? = null
         var toolExecutor: AutoCloseable? = null
+        var subAgentManager: io.github.mangi.eta.agent.delegation.SubAgentManager? = null
         var toolsBinding: AgentRunController.ResourceBinding? = null
         var response: AgentModelClient.ModelResponse.Text? = null
         var cancelled = false
@@ -256,14 +257,27 @@ internal class AgentRuntimeRunExecutor(
                     }
                 }
             }
-            val subagents = io.github.mangi.eta.agent.subagent.SubAgentOrchestrator(
-                request.config, runController, runToolExecutor,
+            val delegated = io.github.mangi.eta.agent.delegation.SubAgentManager(
+                runToolExecutor,
                 { AgentToolCapabilities.capture(appContext) },
             )
-            io.github.mangi.eta.agent.subagent.SubAgentOrchestrator.schemas().forEach { runTools.put(it) }
+            subAgentManager = delegated
+            if (io.github.mangi.eta.agent.delegation.SubAgentPreferences.enabled()) {
+                io.github.mangi.eta.agent.delegation.SubAgentTools.schemas()
+                    .forEach { runTools.put(it) }
+            }
             val delegatedExecutor = AgentModelClient.ToolExecutor { call ->
-                if (call.name in io.github.mangi.eta.agent.subagent.SubAgentOrchestrator.names) subagents.execute(call)
-                else runToolExecutor.execute(call)
+                if (call.name in io.github.mangi.eta.agent.delegation.SubAgentTools.names) {
+                    runCatching { delegatedCall(delegated, request.config, call) }
+                        .getOrElse { throwable ->
+                            AgentModelClient.ToolResult(
+                                JSONObject().put("ok", false).put("code", "SUB_AGENT_UNAVAILABLE")
+                                    .put("message", throwable.message.orEmpty()).toString(),
+                            )
+                        }
+                } else {
+                    runToolExecutor.execute(call)
+                }
             }
             val completedResponse = AgentModelClient.complete(
                 config = request.config,
@@ -365,6 +379,8 @@ internal class AgentRuntimeRunExecutor(
                 rewriteTargetMessageId = request.rewriteTargetMessageId,
             )
         } finally {
+            // 子代理任务继续在后台运行；只回收本次 run 独占的资源。
+            // RoutingToolExecutor.close() 会释放 GUI 占用标记等进程级状态，不能跨 run 复用。
             runCatching { toolsBinding?.close() }
             runCatching { toolExecutor?.close() }
         }
@@ -436,5 +452,17 @@ internal class AgentRuntimeRunExecutor(
                     "Agent runtime event projection failed: type=${throwable.safeLogType()}"
                 }
             }
+    }
+
+    // 子代理工具入口：分派、取结果、取消。
+    private fun delegatedCall(
+        manager: io.github.mangi.eta.agent.delegation.SubAgentManager,
+        config: AgentModelClient.ModelConfig,
+        call: AgentModelClient.ToolCall,
+    ): AgentModelClient.ToolResult = when (call.name) {
+        "delegate_task" -> manager.callDispatch(config, call)
+        "get_task_result" -> manager.callResult(call)
+        "cancel_task" -> manager.callCancel(call)
+        else -> AgentModelClient.ToolResult("{\"ok\":false,\"code\":\"UNKNOWN_SUB_AGENT_TOOL\"}")
     }
 }

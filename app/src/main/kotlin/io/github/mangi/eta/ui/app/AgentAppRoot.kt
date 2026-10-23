@@ -714,6 +714,9 @@ fun AgentAppRoot(
                     onBack = ::popRoute,
                 )
             }
+            entry<AppRoute.SubAgents>(swipeDismiss = swipeDismiss) {
+                io.github.mangi.eta.ui.SubAgentSettingsScreen(onBack = ::popRoute)
+            }
             entry<AppRoute.ModelProviders>(swipeDismiss = swipeDismiss) {
                 ModelProviderListScreen(
                     onNavigate = { route -> pushRoute(route) },

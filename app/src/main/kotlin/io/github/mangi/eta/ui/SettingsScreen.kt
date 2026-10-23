@@ -331,6 +331,18 @@ private fun SettingsPageContent(
 
                     EtaPreferenceDivider()
                     EtaArrowPreference(
+                        title = "子代理",
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.AccountTree,
+                                tint = EtaPreferenceColors.Orange,
+                            )
+                        },
+                        onClick = { onNavigate(AppRoute.SubAgents) },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
                         title = "角色",
                         startAction = {
                             EtaPreferenceIcon(
