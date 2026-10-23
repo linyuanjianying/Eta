@@ -107,6 +107,7 @@ internal object AgentModelClient {
         roleplayContext: RoleplayRunContext? = null,
         rewriteReply: Boolean = false,
         assistantScreenContext: String = "",
+        allowedToolNames: Set<String>? = null,
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
         onTranscript: (List<ConversationMessage>) -> Unit = {},
         onEvent: (AgentEvent) -> Unit = {}
@@ -158,7 +159,12 @@ internal object AgentModelClient {
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
             }
-            return tools
+            return if (allowedToolNames == null) tools else JSONArray().also { filtered ->
+                for (i in 0 until tools.length()) {
+                    val tool = tools.getJSONObject(i)
+                    if (toolName(tool) in allowedToolNames) filtered.put(tool)
+                }
+            }
         }
         val tools = toolsFor(initialCapabilities)
         onEvent(

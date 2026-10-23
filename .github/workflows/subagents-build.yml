@@ -1,0 +1,29 @@
+name: Subagents Debug APK
+on:
+  push:
+    branches: [feature/subagents]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-build
+      - name: Build APK
+        run: ./gradlew --no-daemon --no-configuration-cache :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Eta-subagents-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Unit tests
+        run: ./gradlew --no-daemon --no-configuration-cache :app:testDebugUnitTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore

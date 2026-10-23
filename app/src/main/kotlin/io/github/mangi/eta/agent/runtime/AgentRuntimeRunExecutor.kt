@@ -256,6 +256,15 @@ internal class AgentRuntimeRunExecutor(
                     }
                 }
             }
+            val subagents = io.github.mangi.eta.agent.subagent.SubAgentOrchestrator(
+                request.config, runController, runToolExecutor,
+                { AgentToolCapabilities.capture(appContext) },
+            )
+            io.github.mangi.eta.agent.subagent.SubAgentOrchestrator.schemas().forEach { runTools.put(it) }
+            val delegatedExecutor = AgentModelClient.ToolExecutor { call ->
+                if (call.name in io.github.mangi.eta.agent.subagent.SubAgentOrchestrator.names) subagents.execute(call)
+                else runToolExecutor.execute(call)
+            }
             val completedResponse = AgentModelClient.complete(
                 config = request.config,
                 sessionId = request.effectiveModelSessionId,
@@ -279,7 +288,7 @@ internal class AgentRuntimeRunExecutor(
                 capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
                 prompt = request.prompt,
                 assistantScreenContext = request.assistantScreenContext,
-                toolExecutor = runToolExecutor,
+                toolExecutor = delegatedExecutor,
                 images = request.images,
                 history = request.history,
                 runController = runController,
