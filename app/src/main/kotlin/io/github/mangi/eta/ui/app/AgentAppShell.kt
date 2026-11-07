@@ -609,6 +609,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.ImageGenSettings -> "生图（中转站）"
     is AppRoute.ToolBoundaries -> "工具边界与组合"
     is AppRoute.OpenCodeGateway -> "OpenCode 内嵌网关"
+    is AppRoute.SubagentBudget -> "子代理预算与记忆"
     is AppRoute.Skills -> stringResource(R.string.route_skills)
     is AppRoute.Subagents -> "Subagent"
     is AppRoute.Characters -> "角色"

@@ -414,6 +414,12 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiPreference(
+                        title = "子代理预算与记忆",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Hub, SettingsIconColors.Green) },
+                        onClick = { onNavigate(AppRoute.SubagentBudget) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
                         title = stringResource(R.string.route_skills),
                         icon = {
                             CouiSettingsIcon(
