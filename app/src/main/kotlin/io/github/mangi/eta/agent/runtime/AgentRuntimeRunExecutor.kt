@@ -26,7 +26,9 @@ import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.skill.SkillRuntime
 import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
+import io.github.mangi.eta.agent.memory.AgentExperienceTrace
 import io.github.mangi.eta.agent.tool.AgentLocalTools
+import io.github.mangi.eta.agent.tool.AgentTaskTool
 import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.PendingSkillConflictCapabilityParser
@@ -35,6 +37,10 @@ import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
+import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.repository.AgentExperienceRepository
+import io.github.mangi.eta.data.repository.AgentKnowledgeRepository
+import io.github.mangi.eta.data.repository.AgentTaskPlanStore
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -257,6 +263,14 @@ internal class AgentRuntimeRunExecutor(
                     journal + session.transcript
                 }
             }
+            /** 任务经验：只记录已发布工具名与机器可读错误码，不含参数、输出与聊天正文。 */
+            val experienceEnabled = memoryEnabled && roleplayContext == null &&
+                request.operation == AgentRuntimeWire.OP_CHAT
+            val experienceTrace = AgentExperienceTrace()
+            /** 子任务清单：长任务的外部进度，跨轮次与上下文压缩都不会丢。 */
+            val taskTool = conversationId?.takeIf { it.isNotBlank() }?.let { id ->
+                AgentTaskTool(AgentTaskPlanStore(appContext.filesDir), id)
+            }
             val subagentAllowed = {
                 request.config.subagentTools && currentPermissions().subagentTools
             }
@@ -288,6 +302,7 @@ internal class AgentRuntimeRunExecutor(
             val runTools = JSONArray(mcpTools.toString()).also { tools ->
                 if (subagentAllowed()) AgentSubagentToolCatalog.appendSchemas(tools)
                 if (historyTool != null) tools.put(AgentConversationToolCatalog.schema())
+                if (taskTool != null) tools.put(taskTool.schema())
                 if (characterMemoryTools != null && memoryEnabled) CharacterMemoryTools.appendSchemas(tools)
             }
             val runToolExecutor = AgentModelClient.ToolExecutor { call ->
@@ -309,7 +324,10 @@ internal class AgentRuntimeRunExecutor(
                     historyTool.execute(call)
                 } else if (call.name in CharacterMemoryTools.NAMES && characterMemoryTools != null) {
                     characterMemoryTools.execute(call)
+                } else if (call.name == AgentTaskTool.TASK_WRITE && taskTool != null) {
+                    taskTool.execute(call)
                 } else routingExecutor.execute(call).also { result ->
+                    if (experienceEnabled) experienceTrace.observe(call.name, result.content)
                     if (call.name == "memory_write") {
                         runCatching { JSONObject(result.content) }.getOrNull()
                             ?.takeIf { it.optBoolean("ok") }
@@ -371,6 +389,17 @@ internal class AgentRuntimeRunExecutor(
                 )
             }
             response = completedResponse
+            if (experienceEnabled && runBlocking { SettingsDataStore.autoExperienceEnabled() }) {
+                runCatching {
+                    AgentExperienceRepository.record(
+                        request.prompt, experienceTrace.snapshot(), completed = true,
+                    )
+                }.onFailure {
+                    AndroidAgentLogger.warnThrottled("experience_record_failed") {
+                        "Task experience capture unavailable: type=${it.safeLogType()}"
+                    }
+                }
+            }
             AgentRuntimeWire.RunResult(
                 runId = request.runId,
                 ok = true,

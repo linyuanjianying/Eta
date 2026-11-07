@@ -33,6 +33,14 @@ internal object AgentPersonalResultFormatter {
         when (toolName) {
             "memory_get", "character_memory_get" -> return summarizeMemoryGet(toolName, json)
             "memory_write", "character_memory_write" -> return summarizeMemoryWrite(toolName, json)
+            "knowledge_search" -> {
+                val count = itemCount(json) ?: return null
+                return if (count == 0) "本地知识库没有匹配内容" else "找到 $count 条知识"
+            }
+            "knowledge_get" -> return "已读取知识条目"
+            "knowledge_save" -> return "已保存知识条目"
+            "knowledge_delete" -> return "已删除知识条目"
+            "task_write" -> return null
             "read_sms_code" -> {
                 val count = itemCount(json)
                 return if (count != null && count > 0) "已读取验证码" else "未收到最新验证码"

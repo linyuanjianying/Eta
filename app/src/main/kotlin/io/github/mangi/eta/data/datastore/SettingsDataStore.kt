@@ -116,6 +116,8 @@ internal object SettingsDataStore {
     private val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
+    /** 独立开关：自动记录任务经验（只留工具名与错误码，不含参数、输出与聊天正文）。 */
+    private val AUTO_EXPERIENCE_ENABLED = booleanPreferencesKey("auto_experience_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_UI_STYLE = stringPreferencesKey("appearance_ui_style")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
@@ -141,6 +143,19 @@ internal object SettingsDataStore {
         if (!::dataStore.isInitialized) {
             dataStore = context.applicationContext.dataStore
         }
+    }
+
+    suspend fun autoExperienceEnabled(): Boolean {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+            .map { preferences -> preferences[AUTO_EXPERIENCE_ENABLED] ?: false }
+            .first()
+    }
+
+    suspend fun setAutoExperienceEnabled(enabled: Boolean) {
+        ensureInitialized()
+        dataStore.edit { it[AUTO_EXPERIENCE_ENABLED] = enabled }
     }
 
     fun settingsFlow(): Flow<Settings> {
