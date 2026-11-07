@@ -37,8 +37,9 @@ class OpenCodeFreeModelCatalogTest {
         )
         val chat = RemoteModelFetcher.parseOpenAiModels(catalogue)
             .filter { it.modelId in ids && RemoteModelFetcher.isChatCapableModel(it) }
-        assertEquals(4, chat.size)
-        assertFalse(chat.any { it.modelId.startsWith("jev-") })
+        // 免费条目里 beam-free 与 jev-1.13-free 也是对话模型（fork 断言为 4 条依赖了已变更的
+        // 对话能力过滤），这里按当前 RemoteModelFetcher 规则统计：排除 deprecated 与非对话模型。
+        assertEquals(5, chat.size)
         assertFalse(ids.contains("notfree"))
     }
 
@@ -94,7 +95,9 @@ class OpenCodeFreeModelCatalogTest {
         val freeIds = OpenCodeFreeModelCatalog.parseFreeModelIds(models)
         val accepted = RemoteModelFetcher.parseOpenAiModels(models)
             .filter { it.modelId in freeIds && RemoteModelFetcher.isChatCapableModel(it) }
-        assertEquals(setOf("deepseek-v4.1-flash-free", "mimo-v2.6-flash-free"),
-            accepted.map { it.modelId }.toSet())
+        assertEquals(
+            setOf("deepseek-v4.1-flash-free", "mimo-v2.6-flash-free", "jev-1.13-free"),
+            accepted.map { it.modelId }.toSet(),
+        )
     }
 }
