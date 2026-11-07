@@ -15,7 +15,9 @@ class AgentContextRecoveryTest {
     )
 
     @Test
-    fun unknownWindowStillRunsButNeverAutoCompacts() {
+    fun unknownWindowStillRunsAndCompactsByVolumeNotByBogusUsage() {
+        // 窗口未知时不采信 provider 回报的 usage（这里故意报 10M 假值），按消息体积估算；
+        // 压缩该触发就触发，但对话必须照常跑完，不被窗口缺失阻断。
         for (window in listOf(null, 0, -1)) {
             var summaries = 0
             val result = AgentModelClient.complete(config.copy(contextWindow = window), "继续",
@@ -30,7 +32,7 @@ class AgentContextRecoveryTest {
                     }
                 })
             assertEquals("完成", result.content)
-            assertEquals(0, summaries)
+            assertTrue("窗口未知时应按体积估算触发压缩", summaries > 0)
         }
     }
 
