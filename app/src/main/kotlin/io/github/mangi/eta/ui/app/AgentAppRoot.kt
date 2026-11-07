@@ -50,6 +50,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.AppearanceSettingsScreen
+import io.github.mangi.eta.local.incoming.rememberIncomingDropTarget
 import io.github.mangi.eta.ui.IncomingShareRequest
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.components.MiuixDialogActions
@@ -400,6 +401,11 @@ fun AgentAppRoot(
         ) {
             entry<AppRoute.Home>(swipeDismiss = swipeDismiss) {
                 RoutedShell(route = AppRoute.Home) {
+                    // 拖文件/图片/链接/选中文本到聊天舞台：与系统分享同一条导入链路。
+                    val chatDropTarget = rememberIncomingDropTarget(
+                        enabled = agentState.homeState.isConversationLoaded &&
+                            agentState.homeState.roleplayChatUi() == null,
+                    ) { incoming -> agentState.acceptSharedContent(incoming) }
                     AgentHomeScreen(
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
@@ -455,6 +461,8 @@ fun AgentAppRoot(
                         conversationLoadFailed = agentState.conversationLoadFailed,
                         historyLoadState = agentState.historyLoadState,
                         isDrawerOpen = conversationPaneOpen,
+                        // 拖文件/图片/链接/选中文本到聊天舞台：与系统分享同一条导入链路。
+                        modifier = chatDropTarget,
                     )
                 }
             }
