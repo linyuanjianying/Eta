@@ -85,6 +85,7 @@ internal object RuntimeConfigRepository {
             thinkingEnabled = effort.enablesReasoning,
             reasoningEffort = effort,
             autoCompactionEnabled = primaryConfig.autoCompactionEnabled,
+            compactionThresholdTokens = primaryConfig.compactionThresholdTokens,
             supportsSearchSuggestions = false,
         )
     }
@@ -208,6 +209,7 @@ internal object RuntimeConfigRepository {
             model = model.modelId.trim(),
             modelDisplayName = model.displayName.trim(),
             contextWindow = model.effectiveContextWindow,
+            declaredContextWindow = model.contextWindow?.takeIf { it > 0 },
             autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
             subagentTools = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
             systemPrompt = systemPrompt,

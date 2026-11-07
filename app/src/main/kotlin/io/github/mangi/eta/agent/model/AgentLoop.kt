@@ -131,6 +131,7 @@ internal class AgentLoop(
             val requestMessages = AssistantScreenContextProjection.project(
                 roleplayContext?.projectMessages(messages) ?: messages,
             )
+            context.requestStarting()
             var roundInputTokens: Int? = null
             val reasoningLengthBeforeRound = accumulatedReasoning.length
             val completedRound = try {

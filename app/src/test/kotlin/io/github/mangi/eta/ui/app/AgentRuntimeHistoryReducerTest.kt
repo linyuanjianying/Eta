@@ -8,6 +8,32 @@ import org.junit.Test
 
 class AgentRuntimeHistoryReducerTest {
     @Test
+    fun generatedImagesBecomeVisibleAndRecoveryKeepsThemExactlyOnce() {
+        val reference = "data:image/png;base64,aGVsbG8="
+        val image = AgentModelClient.ConversationMessage(
+            role = "user", messageId = "generated-image-1", generatedImages = true,
+            contentJson = org.json.JSONArray().put(org.json.JSONObject()
+                .put("type", "image_url")
+                .put("image_url", org.json.JSONObject().put("url", reference))).toString(),
+        )
+        val initial = AgentChatUiState(emptyList(), input = "", isStreaming = true, thinkingEnabled = false)
+        val applied = AgentRuntimeHistoryReducer.apply(initial, "run", listOf(image)).state
+        assertEquals(listOf(reference), applied.messages.filterIsInstance<io.github.mangi.eta.ui.model.GeneratedImageMessageUi>().single().images)
+        assertEquals(applied.messages, AgentRuntimeHistoryReducer.mergeGeneratedImages(applied.messages, listOf(image)))
+        for (ok in listOf(true, false)) {
+            val result = io.github.mangi.eta.agent.runtime.AgentRuntimeWire.RunResult(
+                runId = "run", ok = ok, content = if (ok) "已生成" else "",
+                error = if (ok) null else "后续请求失败", transcript = listOf(image),
+            )
+            val recovered = AgentPendingResultRecovery.apply(initial, "run", result, supplements = emptyList()).state
+            assertEquals(listOf(reference), recovered.messages.filterIsInstance<io.github.mangi.eta.ui.model.GeneratedImageMessageUi>().single().images)
+            assertEquals(recovered, AgentPendingResultRecovery.apply(recovered, "run", result, supplements = emptyList()).state)
+        }
+        val ordinary = image.copy(generatedImages = false, messageId = "user-attachment")
+        assertTrue(AgentRuntimeHistoryReducer.apply(initial, "ordinary", listOf(ordinary)).state.messages.isEmpty())
+    }
+
+    @Test
     fun journalRetainsOriginalsAndContextIncludesPostSnapshotSteps() {
         val original = AgentModelClient.ConversationMessage("user", "不能丢失的旧约束")
         val first = AgentModelClient.ConversationMessage("assistant", "快照前已执行")

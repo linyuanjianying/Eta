@@ -1379,7 +1379,7 @@ internal class AgentAppState(
         val userMessage = UserMessageUi(
             id = editBoundary?.userMessage?.id ?: "user-$runId",
             content = runtimePrompt,
-            images = pendingImages.map { it.dataUrl },
+            images = pendingImages.map { it.uri.takeIf { ref -> ref.startsWith("data:image/") } ?: it.dataUrl },
             isEdited = editBoundary != null,
         )
         val history = editBoundary?.historyPrefix ?: state.history
@@ -1735,6 +1735,7 @@ internal class AgentAppState(
                     mimeType = p.mimeType,
                     bytes = 0,
                     source = "user_attach",
+                    preserveOriginal = true,
                 )
             }
             if (withContext(Dispatchers.Main) { runStore.isStopRequested(runId) }) {
@@ -1836,6 +1837,7 @@ internal class AgentAppState(
                     context = appContext,
                     value = uri,
                     source = "user_attach",
+                    preserveOriginal = true,
                 )
                 if (image == null) {
                     withContext(Dispatchers.Main) {
@@ -1959,6 +1961,7 @@ internal class AgentAppState(
                         context = appContext,
                         value = rawUri,
                         source = "user_attach",
+                    preserveOriginal = true,
                     )
                     if (image != null) {
                         val preview = AgentImageCodec.previewFromReference(appContext, image) ?: image

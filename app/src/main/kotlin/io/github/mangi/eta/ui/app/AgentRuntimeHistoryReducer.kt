@@ -24,7 +24,7 @@ internal object AgentRuntimeHistoryReducer {
             return Outcome(state, alreadyApplied = true)
         }
         val validSnapshot = snapshot?.takeIf { it.operationId == runId }
-        val consumedSupplements = maxOf(additions.count { it.role == "user" }, validSnapshot?.consumedSupplementCount ?: 0)
+        val consumedSupplements = maxOf(additions.count { it.role == "user" && !it.generatedImages && !it.messageId.startsWith(GENERATED_IMAGE_ID_PREFIX) }, validSnapshot?.consumedSupplementCount ?: 0)
         val pendingSupplements = if (!retainPendingSupplements) emptyList() else state.messages.filterIsInstance<UserMessageUi>()
             .filter { it.id.startsWith("user-$runId-supplement-") }
             .sortedBy { it.id.substringAfterLast('-').toIntOrNull() ?: 0 }
@@ -42,6 +42,7 @@ internal object AgentRuntimeHistoryReducer {
         } else state.history + additions + pendingSupplements
         return Outcome(
             state = state.copy(
+                messages = mergeGeneratedImages(state.messages, additions),
                 journal = state.journal.ifEmpty { state.history } + additions + pendingSupplements,
                 history = history,
                 appliedRuntimeRunIds = state.appliedRuntimeRunIds + runId,
@@ -54,6 +55,27 @@ internal object AgentRuntimeHistoryReducer {
         runId in state.appliedRuntimeRunIds
 
     private const val GENERATED_IMAGE_ID_PREFIX = "generated-image-"
+
+    /** 将会话资产投影到可见消息；实时返回与 outbox 恢复共用并按消息 ID 去重。 */
+    fun mergeGeneratedImages(
+        messages: List<io.github.mangi.eta.ui.model.AgentChatMessageUi>,
+        additions: List<AgentModelClient.ConversationMessage>,
+    ): List<io.github.mangi.eta.ui.model.AgentChatMessageUi> {
+        val knownIds = messages.mapTo(mutableSetOf()) { it.id }
+        val generated = additions.mapNotNull { message ->
+            if (!message.generatedImages && !message.messageId.startsWith(GENERATED_IMAGE_ID_PREFIX)) {
+                return@mapNotNull null
+            }
+            val images = imageReferencesOf(message)
+            if (images.isEmpty()) return@mapNotNull null
+            val id = message.messageId.ifBlank {
+                GENERATED_IMAGE_ID_PREFIX + java.util.UUID.nameUUIDFromBytes(message.contentJson.toByteArray(Charsets.UTF_8))
+            }
+            if (!knownIds.add(id)) return@mapNotNull null
+            GeneratedImageMessageUi(id = id, images = images)
+        }
+        return if (generated.isEmpty()) messages else messages + generated
+    }
 
     /** contentJson 里的 data URL 就是 UI 显示要用的引用，直接抽出来给 MessageImageRow。 */
     private fun imageReferencesOf(message: AgentModelClient.ConversationMessage): List<String> {

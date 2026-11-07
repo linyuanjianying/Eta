@@ -137,12 +137,19 @@ internal fun rememberDataUrlBitmap(dataUrl: String) = remember(dataUrl) {
     decodeDataUrlBitmap(dataUrl)
 }
 
-internal fun decodeDataUrlBitmap(dataUrl: String): ImageBitmap? {
+internal fun decodeDataUrlBitmap(dataUrl: String, maxPixels: Long = 0L): ImageBitmap? {
     val base64 = dataUrl.substringAfter("base64,", "")
     if (base64.isBlank()) return null
     return runCatching {
         val bytes = Base64.decode(base64, Base64.NO_WRAP)
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        val options = BitmapFactory.Options()
+        if (maxPixels > 0) {
+            options.inJustDecodeBounds = true
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            options.inSampleSize = chatImageSampleSize(options.outWidth, options.outHeight, maxPixels)
+            options.inJustDecodeBounds = false
+        }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
     }.getOrNull()
 }
 
@@ -345,6 +352,9 @@ private fun UserMessageBubble(
         Color(0xFFE5E7EA)
     }
     val uiStyle = LocalUiStyle.current
+    var viewedImage by remember(message.id) { mutableStateOf<String?>(null) }
+    val saveImage = rememberSaveChatImage()
+    ImageViewerDialog(viewedImage) { viewedImage = null }
     val bubbleContent: @Composable () -> Unit = {
         if (message.images.isNotEmpty()) {
             Row(
@@ -352,14 +362,16 @@ private fun UserMessageBubble(
                 modifier = Modifier.padding(bottom = 8.dp),
             ) {
                 message.images.forEach { dataUrl ->
-                    val bitmap = rememberDataUrlBitmap(dataUrl)
+                    val bitmap = rememberDataUrlBitmap(dataUrl, THUMBNAIL_MAX_PIXELS)
                     if (bitmap != null) {
                         Image(
                             bitmap = bitmap,
                             contentDescription = stringResource(R.string.chat_image_attachment),
                             modifier = Modifier
                                 .size(100.dp)
-                                .clip(RoundedCornerShape(12.dp)),
+                                .clip(RoundedCornerShape(12.dp))
+                                .combinedClickable(onClick = { viewedImage = dataUrl },
+                                    onLongClick = { saveImage(dataUrl) }),
                             contentScale = ContentScale.Crop,
                         )
                     }

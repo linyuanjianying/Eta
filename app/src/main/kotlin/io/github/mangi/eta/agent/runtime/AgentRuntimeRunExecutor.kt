@@ -79,8 +79,12 @@ internal class AgentRuntimeRunExecutor(
 
     fun execute(
         session: AgentRuntimeSession,
-        request: AgentRuntimeWire.RunRequest,
+        originalRequest: AgentRuntimeWire.RunRequest,
     ): Outcome {
+        val threshold = runCatching {
+            runBlocking { SettingsDataStore.compactionSettings().effectiveThresholdTokens }
+        }.getOrDefault(io.github.mangi.eta.data.model.CompactionSettings.DEFAULT_THRESHOLD_TOKENS)
+        val request = originalRequest.copy(config = originalRequest.config.copy(compactionThresholdTokens = threshold))
         val runController = session.controller
         val archivedEvents = AgentRunArchiveStore.createEventBuffer(request.handoff)
         var entrySurfaceGuard: EntrySurfaceGuard? = null
@@ -281,8 +285,8 @@ internal class AgentRuntimeRunExecutor(
             val experienceEnabled = memoryEnabled && roleplayContext == null &&
                 request.operation == AgentRuntimeWire.OP_CHAT
             val experienceTrace = AgentExperienceTrace()
-            val imageGenEnabled = memoryEnabled && roleplayContext == null &&
-                runBlocking { SettingsDataStore.imageGenSettings().enabled }
+            // 生图有独立开关，与记忆和角色模式无关。
+            val imageGenEnabled = runBlocking { SettingsDataStore.imageGenSettings().enabled }
             /** 子任务清单：长任务的外部进度，跨轮次与上下文压缩都不会丢。 */
             val taskTool = conversationId?.takeIf { it.isNotBlank() }?.let { id ->
                 AgentTaskTool(AgentTaskPlanStore(appContext.filesDir), id)

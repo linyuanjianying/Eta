@@ -15,6 +15,52 @@ class AgentContextRecoveryTest {
     )
 
     @Test
+    fun modelWindowTakesPriorityOverUserThreshold() {
+        fun threshold(c: AgentModelClient.ModelConfig) = AgentContextSession(
+            c, messages(), 1, "operation", provider { _, _ -> response("摘要") },
+            AgentRunController(), { emptySet() }, {}, {},
+        ).triggerThreshold()
+        assertEquals(85_000, threshold(config.copy(contextWindow = 100_000,
+            declaredContextWindow = 200_000, compactionThresholdTokens = 5_000)))
+        assertEquals(170_000, threshold(config.copy(contextWindow = null,
+            declaredContextWindow = 200_000, compactionThresholdTokens = 5_000)))
+        assertEquals(5_000, threshold(config.copy(contextWindow = null,
+            declaredContextWindow = null, compactionThresholdTokens = 5_000)))
+        assertEquals(27_200, threshold(config.copy(contextWindow = null,
+            compactionThresholdTokens = -1)))
+    }
+
+    @Test
+    fun usageIncludesContentAddedSinceRequestStarted() {
+        val history = messages()
+        var summaries = 0
+        val session = AgentContextSession(config, history, 1, "operation", provider { _, _ ->
+            summaries++
+            response("历史已完成。")
+        }, AgentRunController(), { emptySet() }, {}, {})
+        session.requestStarting()
+        session.observeInputTokens(764_990)
+        history.put(JSONObject().put("role", "assistant").put("content", "新增".repeat(100)))
+        session.compact()
+        assertEquals(1, summaries)
+    }
+
+    @Test
+    fun userThresholdTriggersAtExactBoundaryWithoutModelWindow() {
+        for (usage in listOf(4_999, 5_000)) {
+            var summaries = 0
+            val session = AgentContextSession(config.copy(contextWindow = null, compactionThresholdTokens = 5_000),
+                messages(), 1, "operation", provider { _, _ ->
+                    summaries++
+                    response("摘要")
+                }, AgentRunController(), { emptySet() }, {}, {})
+            session.observeInputTokens(usage)
+            session.compact()
+            assertEquals(if (usage == 5_000) 1 else 0, summaries)
+        }
+    }
+
+    @Test
     fun unknownWindowStillRunsAndCompactsByVolumeNotByBogusUsage() {
         // 窗口未知时不采信 provider 回报的 usage（这里故意报 10M 假值），按消息体积估算；
         // 压缩该触发就触发，但对话必须照常跑完，不被窗口缺失阻断。
@@ -37,8 +83,8 @@ class AgentContextRecoveryTest {
     }
 
     @Test
-    fun automaticCompactionUsesOnlyActualInputUsageAndConfiguredWindow() {
-        for (input in listOf(null, 300_000, 764_999, 765_000)) {
+    fun automaticCompactionUsesInputUsagePlusAppendedContentAndConfiguredWindow() {
+        for (input in listOf(null, 300_000, 764_000, 765_000)) {
             var summaries = 0
             val events = mutableListOf<AgentEvent>()
             val result = AgentModelClient.complete(config, "继续",
@@ -57,7 +103,7 @@ class AgentContextRecoveryTest {
             assertEquals("完成", result.content)
             val completed = events.filterIsInstance<AgentEvent.ContextCompaction>().lastOrNull()
             if (input == 765_000) {
-                assertEquals(765_000, completed!!.tokensBefore)
+                assertTrue(completed!!.tokensBefore!! >= 765_000)
                 assertNull(completed.tokensAfter)
             } else assertNull(completed)
         }

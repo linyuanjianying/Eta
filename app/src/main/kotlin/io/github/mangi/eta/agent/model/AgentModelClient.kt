@@ -351,6 +351,7 @@ internal object AgentModelClient {
          * 这里只用于提前触发压缩：声明值可能过期，宁早勿晚。
          */
         val declaredContextWindow: Int? = null,
+        val compactionThresholdTokens: Int = io.github.mangi.eta.data.model.CompactionSettings.DEFAULT_THRESHOLD_TOKENS,
         val systemPrompt: String,
         val anthropicVersion: String = AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
         val openAiEndpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,
@@ -384,7 +385,7 @@ internal object AgentModelClient {
         val effectiveReasoningEffort: ReasoningEffort
             get() = reasoningEffort ?: ReasoningEffort.fromLegacy(thinkingEnabled)
 
-        /** 未知窗口不阻断对话：只关闭依赖窗口的自动压缩，手动压缩与服务商溢出错误照常可用。 */
+        /** 未知窗口不阻断对话：自动压缩使用通用阈值，手动压缩仍可用。 */
         val knownContextWindow: Int?
             get() = contextWindow?.takeIf { it > 0 }
 

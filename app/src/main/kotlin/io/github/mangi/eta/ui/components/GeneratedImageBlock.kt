@@ -1,139 +1,134 @@
 package io.github.mangi.eta.ui.components
 
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.util.Base64
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.github.mangi.eta.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/**
- * 缩略图上限：100dp 在 3x 屏上是 300px，40 万像素够用，再大纯属浪费内存。
- */
 internal const val THUMBNAIL_MAX_PIXELS = 400_000L
 
-/**
- * 按像素上限做 2 的幂降采样。
- *
- * 历史消息里存的是 1600 长边的展示档，直接按原尺寸解成 100dp 缩略图，
- * 每张要占 7.7MB ARGB，一屏十几张就够 OOM 了。
- */
 @Composable
-internal fun rememberDataUrlBitmap(dataUrl: String, maxPixels: Long = 0L) =
-    remember(dataUrl, maxPixels) { decodeDataUrlBitmap(dataUrl) }
+internal fun rememberDataUrlBitmap(dataUrl: String, maxPixels: Long) =
+    remember(dataUrl, maxPixels) { decodeDataUrlBitmap(dataUrl, maxPixels) }
 
-/**
- * 全屏看图。
- *
- * 缩略图只有 60/100dp，字看不清、细节全糊，所以点开必须给「原图铺满 + 可放大」：
- * 单击任意处或返回键关闭。
- *
- * 为什么用 `usePlatformDefaultWidth = false`：默认 Dialog 宽度受系统主题限制（约 320dp），
- * 那样只是把缩略图放大到一张卡片大小，等于没放大。
- */
+/** 保存引用里的原始编码字节，不对预览 Bitmap 再压缩。 */
 @Composable
-internal fun ImageViewerDialog(
-    dataUrl: String?,
-    onDismiss: () -> Unit,
-) {
-    if (dataUrl == null) return
-    val bitmap = rememberDataUrlBitmap(dataUrl) ?: return
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.94f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                bitmap = bitmap,
-                contentDescription = stringResource(R.string.chat_image_attachment),
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
-/**
- * 生图结果展示。
- *
- * 与用户附件气泡（右对齐、100dp 缩略图）区分开：这里是助手侧产物，
- * 左对齐、按可用宽度铺满一小块，点开看大图。放在回复下方而不是气泡里，
- * 是因为它不属于任何一方的「发言」。
- */
-@Composable
-internal fun GeneratedImageBlock(
-    images: List<String>,
-    caption: String = "",
-    modifier: Modifier = Modifier,
-) {
-    var viewedImage by remember { mutableStateOf<String?>(null) }
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        images.forEach { dataUrl ->
-            // 展示档比缩略图大：生成图是内容本身，看太糊就没有意义。
-            val bitmap = rememberDataUrlBitmap(dataUrl, GENERATED_IMAGE_MAX_PIXELS)
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = stringResource(R.string.chat_image_attachment),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable(interactionSource = null, indication = null) {
-                            viewedImage = dataUrl
-                        },
-                    contentScale = ContentScale.Fit,
-                )
+internal fun rememberSaveChatImage(): (String) -> Unit {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var saving by remember { mutableStateOf(false) }
+    return { reference ->
+        if (!saving) {
+            saving = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val encoded = reference.substringAfter("base64,", "")
+                        require(encoded.isNotBlank()) { "图片原始数据不可用" }
+                        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                        require(bytes.isNotEmpty()) { "图片数据为空" }
+                        val mime = reference.substringAfter("data:").substringBefore(';')
+                        val extension = when (mime) {
+                            "image/png" -> "png"
+                            "image/webp" -> "webp"
+                            "image/gif" -> "gif"
+                            "image/heic", "image/heif" -> "heic"
+                            "image/avif" -> "avif"
+                            else -> "jpg"
+                        }
+                        val resolver = context.contentResolver
+                        val values = ContentValues().apply {
+                            put(MediaStore.Images.Media.DISPLAY_NAME, "Eta-${java.util.UUID.randomUUID()}.$extension")
+                            put(MediaStore.Images.Media.MIME_TYPE, mime)
+                            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Eta")
+                            put(MediaStore.Images.Media.IS_PENDING, 1)
+                        }
+                        val uri = checkNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values))
+                        try {
+                            checkNotNull(resolver.openOutputStream(uri)).use { it.write(bytes) }
+                            check(resolver.update(uri, ContentValues().apply {
+                                put(MediaStore.Images.Media.IS_PENDING, 0)
+                            }, null, null) > 0)
+                        } catch (failure: Exception) {
+                            resolver.delete(uri, null, null)
+                            throw failure
+                        }
+                    }
+                }
+                saving = false
+                Toast.makeText(context, if (result.isSuccess) "原图已保存到相册 Pictures/Eta" else "保存失败：${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
             }
         }
-        if (caption.isNotBlank()) {
-            top.yukonga.miuix.kmp.basic.Text(
-                text = caption,
-                style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
     }
-    ImageViewerDialog(dataUrl = viewedImage, onDismiss = { viewedImage = null })
 }
 
-/** 生成图的展示像素上限：比缩略图大一个量级，又不至于把内存吃满。 */
-private const val GENERATED_IMAGE_MAX_PIXELS = 2_000_000L
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun ImageViewerDialog(dataUrl: String?, onDismiss: () -> Unit) {
+    if (dataUrl == null) return
+    val bitmap = rememberDataUrlBitmap(dataUrl, 8_000_000L) ?: return
+    val saveImage = rememberSaveChatImage()
+    var scale by remember(dataUrl) { mutableFloatStateOf(1f) }
+    var offsetX by remember(dataUrl) { mutableFloatStateOf(0f) }
+    var offsetY by remember(dataUrl) { mutableFloatStateOf(0f) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color.Black)
+            .combinedClickable(onClick = onDismiss, onLongClick = { saveImage(dataUrl) }), contentAlignment = Alignment.Center) {
+            Image(bitmap, stringResource(R.string.chat_image_attachment), contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    scaleX = scale; scaleY = scale; translationX = offsetX; translationY = offsetY
+                }.pointerInput(dataUrl) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(1f, 6f)
+                        if (scale > 1f) { offsetX += pan.x; offsetY += pan.y }
+                        else { offsetX = 0f; offsetY = 0f }
+                    }
+                })
+            top.yukonga.miuix.kmp.basic.Text("双指缩放 · 长按保存原图 · 点击关闭", color = Color.White,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp))
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun GeneratedImageBlock(images: List<String>, caption: String = "", modifier: Modifier = Modifier) {
+    var viewedImage by remember { mutableStateOf<String?>(null) }
+    val saveImage = rememberSaveChatImage()
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        images.forEach { reference ->
+            val bitmap = rememberDataUrlBitmap(reference, 2_000_000L)
+            if (bitmap != null) Image(bitmap, stringResource(R.string.chat_image_attachment),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).clip(RoundedCornerShape(16.dp))
+                    .combinedClickable(onClick = { viewedImage = reference }, onLongClick = { saveImage(reference) }),
+                contentScale = ContentScale.Fit)
+        }
+        if (caption.isNotBlank()) top.yukonga.miuix.kmp.basic.Text(caption,
+            style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+    }
+    ImageViewerDialog(viewedImage) { viewedImage = null }
+}

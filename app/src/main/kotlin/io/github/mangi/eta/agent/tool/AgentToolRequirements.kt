@@ -44,6 +44,7 @@ internal object AgentToolRequirements {
             "character_memory_get", "character_memory_write",
             "skills_list", "skills_read", "skills_read_resource", "skills_list_curated",
             "skills_inspect_github", "skills_install_from_github",
+            io.github.mangi.eta.agent.image.AgentImageGenToolCatalog.GENERATE_IMAGE,
         )
         register(
             RootRequirement.PARTIAL,

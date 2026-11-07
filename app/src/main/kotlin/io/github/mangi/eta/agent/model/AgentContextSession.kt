@@ -24,6 +24,7 @@ internal class AgentContextSession(
     /** 目录/服务商声明值：只用于提前触发，不作为硬上限（见 ModelConfig.declaredContextWindow）。 */
     private val declaredWindow = config.declaredContextWindow?.takeIf { it > 0 }
     private var inputTokens: Int? = null
+    private var estimatedAtRequest: Int? = null
     private var compacted = false
     private var consumedSupplementCount = 0
     private var consumedUserTurns = (systemCount until messages.length()).sumOf {
@@ -33,6 +34,10 @@ internal class AgentContextSession(
     private var committedSnapshot: AgentContextSnapshot? = null
 
     fun snapshot(): AgentContextSnapshot? = committedSnapshot
+
+    fun requestStarting() {
+        estimatedAtRequest = estimatedTokens()
+    }
 
     fun observeInputTokens(tokens: Int?) {
         inputTokens = tokens?.takeIf { it >= 0 }
@@ -71,7 +76,7 @@ internal class AgentContextSession(
             }
             return
         }
-        if (!force && (!config.autoCompactionEnabled || before == null || before < triggerThreshold())) {
+        if (!force && (!config.autoCompactionEnabled || before < triggerThreshold())) {
             try {
                 publishSnapshot()
             } catch (failure: Exception) {
@@ -105,6 +110,7 @@ internal class AgentContextSession(
             while (messages.length() > 0) messages.remove(messages.length() - 1)
             for (index in 0 until candidate.length()) messages.put(candidate.getJSONObject(index))
             inputTokens = null
+            estimatedAtRequest = null
             onEvent(AgentEvent.ContextCompaction(operation, AgentEvent.ContextCompaction.PHASE_COMPLETED, before))
         } catch (failure: Exception) {
             runController.throwIfCancelled()
@@ -125,16 +131,12 @@ internal class AgentContextSession(
         return AgentConversationCodec.transcript(durable, 0, sensitiveIds())
     }
 
-    /**
-     * 触发判定用的输入量：provider 回报优先。
-     *
-     * 没有硬上限时（人工覆盖缺失，目录声明值也不可靠）退化为按消息体积估算，
-     * 否则换到这类模型后自动压缩会被整体关闭、只能撞服务端上限。
-     * 有硬上限但 provider 不回报 usage 时维持旧语义（不主动压缩），避免无依据地改写用户上下文。
-     */
-    private fun effectiveInputTokens(): Int? {
-        if (contextWindow == null) return estimatedTokens()
-        return inputTokens ?: estimatedTokens()
+    /** Provider 输入用量加本次请求之后新增内容的估算，避免大工具结果落后一轮。 */
+    private fun effectiveInputTokens(): Int {
+        val estimate = estimatedTokens()
+        val actual = inputTokens ?: return estimate
+        val baseline = estimatedAtRequest ?: return actual
+        return (actual.toLong() + (estimate - baseline).coerceAtLeast(0)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     /**
@@ -154,27 +156,19 @@ internal class AgentContextSession(
         return chars / CHARS_PER_TOKEN_ESTIMATE
     }
 
-    /**
-     * 触发阈值。人工覆盖的窗口是硬上限（85%）；只有目录声明值时按更大余量提前压缩——
-     * 声明数字不可信，宁可早压也不撞服务端上限；两者都没有才退回保守假定窗口。
-     */
-    private fun triggerThreshold(): Int = when {
-        contextWindow != null -> (contextWindow * TRIGGER_RATIO).toInt()
-        declaredWindow != null -> (declaredWindow * ADVISORY_TRIGGER_RATIO).toInt()
-        else -> (FALLBACK_CONTEXT_WINDOW * TRIGGER_RATIO).toInt()
+    /** 人工窗口优先，其次模型声明窗口；都没有时直接使用用户设定的 token 阈值。 */
+    internal fun triggerThreshold(): Int {
+        val window = contextWindow ?: declaredWindow
+        return if (window != null) (window * TRIGGER_RATIO).toInt().coerceAtLeast(1)
+        else config.compactionThresholdTokens.takeIf {
+            it in io.github.mangi.eta.data.model.CompactionSettings.MIN_THRESHOLD_TOKENS..
+                io.github.mangi.eta.data.model.CompactionSettings.MAX_THRESHOLD_TOKENS
+        } ?: io.github.mangi.eta.data.model.CompactionSettings.DEFAULT_THRESHOLD_TOKENS
     }
 
     private companion object {
         const val TRIGGER_RATIO = 0.85
-
-        /** 目录声明值可信度低于人工覆盖，留足 40% 余量。 */
-        const val ADVISORY_TRIGGER_RATIO = 0.6
-
-        /** 窗口未知时的保守假定窗口：宁可提前压缩，也不要撞服务端硬上限。 */
-        const val FALLBACK_CONTEXT_WINDOW = 32_000
         const val CHARS_PER_TOKEN_ESTIMATE = 4
-
-        /** 每条消息的 JSON 键名与结构开销估计。 */
         const val FIELD_OVERHEAD_CHARS = 64
     }
 }

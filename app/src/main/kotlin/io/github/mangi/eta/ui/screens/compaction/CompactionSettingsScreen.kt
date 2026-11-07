@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.screens.compaction
 
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -162,6 +164,53 @@ internal fun CompactionSettingsScreen(onBack: () -> Unit) {
         save(settings.copy(reasoningEffort = effortOptions.getOrNull(index)?.wireValue))
     }
 
+    var thresholdDraft by remember(settings.fallbackThresholdTokens) {
+        mutableStateOf(settings.effectiveThresholdTokens.toString())
+    }
+    val thresholdValue = thresholdDraft.toIntOrNull()
+    val thresholdValid = thresholdValue != null && thresholdValue in
+        CompactionSettings.MIN_THRESHOLD_TOKENS..CompactionSettings.MAX_THRESHOLD_TOKENS
+    val thresholdHint = "当前任务模型有上下文窗口时，优先按模型窗口的 85% 自动压缩（人工设置优先于模型声明）。" +
+        "模型没有窗口信息时，达到这里设置的 token 数再压缩。范围：1,024～10,000,000 token；保存后下次任务生效。"
+    val saveThreshold = {
+        if (thresholdValid) save(settings.copy(fallbackThresholdTokens = thresholdValue))
+    }
+
+    @Composable
+    fun ThresholdContent() {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+                CouiTextField(
+                    value = thresholdDraft,
+                    onValueChange = { thresholdDraft = it },
+                    label = "通用压缩阈值（token）",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    showClearButton = false,
+                )
+                CouiText(text = thresholdHint, kind = CouiTextKind.PreferenceSummary,
+                    modifier = Modifier.padding(vertical = 8.dp))
+                CouiButton(text = "保存阈值", enabled = thresholdValid && thresholdValue != settings.effectiveThresholdTokens,
+                    onClick = saveThreshold)
+                error?.let { CouiText(text = it, kind = CouiTextKind.PreferenceSummary) }
+            } else {
+                TextField(value = thresholdDraft, onValueChange = { thresholdDraft = it },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth())
+                Text(text = thresholdHint, style = MiuixTheme.textStyles.footnote2,
+                    modifier = Modifier.padding(vertical = 8.dp))
+                TextButton(text = "保存阈值", enabled = thresholdValid && thresholdValue != settings.effectiveThresholdTokens,
+                    onClick = saveThreshold)
+                error?.let { Text(text = it, color = StatusError) }
+            }
+            if (!thresholdValid) {
+                if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+                    CouiText(text = "请输入 1,024～10,000,000 之间的整数", kind = CouiTextKind.PreferenceSummary)
+                } else Text(text = "请输入 1,024～10,000,000 之间的整数", color = StatusError)
+            }
+        }
+    }
+
     var showModelSheet by remember { mutableStateOf(false) }
     var draft by remember(settings.prompt) {
         mutableStateOf(settings.prompt.ifBlank { AgentCompactionTarget.DEFAULT_PROMPT })
@@ -243,6 +292,8 @@ internal fun CompactionSettingsScreen(onBack: () -> Unit) {
                     kind = CouiTextKind.PreferenceSummary,
                     modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
                 )
+
+                Group(title = "自动压缩阈值") { ThresholdContent() }
 
                 CouiSectionTitle("摘要提示词")
                 Group {
@@ -339,6 +390,13 @@ internal fun CompactionSettingsScreen(onBack: () -> Unit) {
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                     )
+                }
+
+                item(key = "threshold_group") {
+                    SmallTitle("通用压缩阈值（token）")
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
+                        ThresholdContent()
+                    }
                 }
 
                 item(key = "prompt_group") {

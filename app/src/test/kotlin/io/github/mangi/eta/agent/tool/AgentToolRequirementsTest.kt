@@ -22,6 +22,25 @@ class AgentToolRequirementsTest {
     }
 
     @Test
+    fun imageGenerationTogglePreservesOtherToolsWithAndWithoutRoot() {
+        for (root in listOf(false, true)) {
+            for (memory in listOf(false, true)) {
+                fun tools(enabled: Boolean) = AgentToolCatalog.build(
+                    terminalTools = true, browserTools = true, memoryTools = memory,
+                    capabilities = AgentToolCapabilities(rootAvailable = root),
+                    imageGenEnabled = enabled,
+                ).names()
+                val disabled = tools(false)
+                val enabled = tools(true)
+                assertFalse("generate_image" in disabled)
+                assertEquals(disabled + "generate_image", enabled)
+                assertEquals(null, AgentToolCapabilities(rootAvailable = root).unavailableCode("generate_image"))
+                assertFalse(AgentToolRequirements.rootDenied("generate_image", JSONObject(), root))
+            }
+        }
+    }
+
+    @Test
     fun ordinaryCatalogDoesNotExposeCharacterMemoryTools() {
         assertTrue(catalog(root = true).names().none { it in CharacterMemoryTools.NAMES })
     }
@@ -102,6 +121,7 @@ class AgentToolRequirementsTest {
         deviceSensitiveReadTools = true, deviceSensitiveActionTools = true,
         skillGitHubDiscovery = true, skillGitHubInstall = true, memoryTools = true,
         capabilities = AgentToolCapabilities(rootAvailable = root),
+        imageGenEnabled = true,
     )
 
     private fun JSONArray.names(): Set<String> = (0 until length()).mapTo(linkedSetOf()) {

@@ -91,7 +91,6 @@ import io.github.mangi.eta.ui.screens.memory.AgentKnowledgeScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
-import io.github.mangi.eta.ui.screens.subagent.SubagentBudgetScreen
 import io.github.mangi.eta.ui.screens.subagent.SubagentSettingsScreen
 import io.github.mangi.eta.ui.screens.terminal.LinuxEnvironmentScreen
 import io.github.mangi.eta.ui.screens.terminal.LinuxFilesScreen
@@ -512,9 +511,6 @@ fun AgentAppRoot(
             }
             entry<AppRoute.Knowledge>(swipeDismiss = swipeDismiss) {
                 AgentKnowledgeScreen(onBack = ::popRoute)
-            }
-            entry<AppRoute.SubagentBudget>(swipeDismiss = swipeDismiss) {
-                SubagentBudgetScreen(onBack = ::popRoute)
             }
             entry<AppRoute.OpenCodeGateway>(swipeDismiss = swipeDismiss) {
                 OpenCodeGatewayScreen(onBack = ::popRoute)

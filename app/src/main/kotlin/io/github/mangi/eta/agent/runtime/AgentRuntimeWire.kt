@@ -332,6 +332,8 @@ internal object AgentRuntimeWire {
         putString("operation", request.operation)
         request.rewriteTargetMessageId?.let { putString("rewrite_target_message_id", it) }
         request.config.contextWindow?.let { putInt(KEY_CONTEXT_WINDOW, it) }
+        request.config.declaredContextWindow?.let { putInt("declared_context_window", it) }
+        putInt("compaction_threshold_tokens", request.config.compactionThresholdTokens)
         putBoolean(KEY_AUTO_COMPACTION_ENABLED, request.config.autoCompactionEnabled)
         AgentWireText.put(this, KEY_SYSTEM_PROMPT, request.config.systemPrompt, payloadDirectory)
         putString(KEY_ANTHROPIC_VERSION, request.config.anthropicVersion)
@@ -469,6 +471,8 @@ internal object AgentRuntimeWire {
                 model = bundle.getString(KEY_MODEL).orEmpty(),
                 modelDisplayName = bundle.getString(KEY_MODEL_DISPLAY_NAME).orEmpty(),
                 contextWindow = bundle.optionalInt(KEY_CONTEXT_WINDOW),
+                declaredContextWindow = if (bundle.containsKey("declared_context_window")) bundle.getInt("declared_context_window") else null,
+                compactionThresholdTokens = bundle.getInt("compaction_threshold_tokens", io.github.mangi.eta.data.model.CompactionSettings.DEFAULT_THRESHOLD_TOKENS),
                 autoCompactionEnabled = bundle.getBoolean(
                     KEY_AUTO_COMPACTION_ENABLED,
                     Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),

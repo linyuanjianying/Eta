@@ -38,6 +38,11 @@ class ImageGenDataFlowTest {
         val decoded = AgentConversationCodec.fromJsonObject(generatedMessage())
         assertTrue(decoded.generatedImages)
         assertEquals("generated-image-1", decoded.messageId)
+        val roundTripped = AgentConversationCodec.fromJsonObject(AgentConversationCodec.toJsonObject(decoded))
+        assertEquals(decoded, roundTripped)
+        val transcript = AgentConversationCodec.transcript(JSONArray().put(AgentConversationCodec.toJsonObject(decoded)), 0)
+        assertTrue(transcript.single().generatedImages)
+        assertTrue(transcript.single().contentJson.contains(dataUrl))
     }
 
     @Test

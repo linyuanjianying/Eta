@@ -497,6 +497,8 @@ class AgentRuntimeWireTest {
                 apiKey = "test-key",
                 model = "qwen3-max",
                 contextWindow = 262_144,
+                declaredContextWindow = 300_000,
+                compactionThresholdTokens = 48_000,
                 systemPrompt = "你是手机 Agent",
                 terminalTools = true,
                 browserTools = true,
@@ -545,6 +547,8 @@ class AgentRuntimeWireTest {
 
         assertEquals(request, roundTripped)
         assertEquals(262_144, roundTripped.config.contextWindow)
+        assertEquals(300_000, roundTripped.config.declaredContextWindow)
+        assertEquals(48_000, roundTripped.config.compactionThresholdTokens)
         assertEquals(ReasoningEffort.HIGH, roundTripped.config.reasoningEffort)
     }
 

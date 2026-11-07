@@ -33,10 +33,6 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object OpenCodeGateway : AppRoute
 
-    /** 子代理轮次预算、档案与记忆检索开关。 */
-    @Serializable
-    data object SubagentBudget : AppRoute
-
     /** 知识库 / 会话目标 / 任务经验的本机管理。 */
     @Serializable
     data object Knowledge : AppRoute

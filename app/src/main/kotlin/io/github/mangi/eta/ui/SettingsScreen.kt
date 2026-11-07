@@ -425,12 +425,6 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiPreference(
-                        title = "子代理预算与记忆",
-                        icon = { CouiSettingsIcon(Icons.Rounded.Hub, SettingsIconColors.Green) },
-                        onClick = { onNavigate(AppRoute.SubagentBudget) },
-                    )
-                    CouiIconDivider()
-                    CouiPreference(
                         title = stringResource(R.string.route_skills),
                         icon = {
                             CouiSettingsIcon(
@@ -452,18 +446,41 @@ private fun SettingsPageContent(
                         onClick = { onNavigate(AppRoute.McpServers) },
                     )
                     CouiIconDivider()
-                    CouiPreference(title = "逆向能力", summary = "管理逆向技能与作战协议的统一开关",
-                        onClick = { onNavigate(AppRoute.ReverseCapability) })
-                    CouiPreference(title = "编辑作战协议", summary = "编辑随逆向能力开关生效的用户提示文本",
-                        onClick = { onNavigate(AppRoute.CombatProtocol) })
-                    CouiPreference(title = "生图（中转站）", summary = "配置生图服务地址、Key 与模型",
-                        onClick = { onNavigate(AppRoute.ImageGenSettings) })
-                    CouiPreference(title = "工具边界与组合", summary = "工具白名单与常用组合",
-                        onClick = { onNavigate(AppRoute.ToolBoundaries) })
-                    CouiSwitchPreference(title = "新会话默认带角色", summary = "新建会话自动带上上次使用的角色",
-                        checked = reuseRoleplay, onCheckedChange = { value -> coroutineScope.launch {
-                            SettingsDataStore.setReuseLastRoleplayEnabled(value)
-                        } })
+                    CouiPreference(
+                        title = "逆向能力",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Security, SettingsIconColors.Blue) },
+                        onClick = { onNavigate(AppRoute.ReverseCapability) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "编辑作战协议",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Description, SettingsIconColors.Green) },
+                        onClick = { onNavigate(AppRoute.CombatProtocol) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "生图（中转站）",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Palette, SettingsIconColors.Orange) },
+                        onClick = { onNavigate(AppRoute.ImageGenSettings) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "工具边界与组合",
+                        icon = { CouiSettingsIcon(Icons.Rounded.AccountTree, SettingsIconColors.Blue) },
+                        onClick = { onNavigate(AppRoute.ToolBoundaries) },
+                    )
+                    CouiIconDivider()
+                    CouiSwitchPreference(
+                        title = "新会话默认带角色",
+                        icon = { CouiSettingsIcon(Icons.Rounded.SportsBar, SettingsIconColors.Orange) },
+                        checked = reuseRoleplay,
+                        onCheckedChange = { value ->
+                            coroutineScope.launch {
+                                SettingsDataStore.setReuseLastRoleplayEnabled(value)
+                            }
+                        },
+                    )
+                    CouiIconDivider()
                     CouiPreference(
                         title = "角色",
                         icon = {
@@ -941,18 +958,36 @@ private fun SettingsPageContent(
                             },
                             onClick = { onNavigate(AppRoute.McpServers) },
                         )
-                        ArrowPreference(title = "逆向能力", summary = "管理逆向技能与作战协议的统一开关",
-                            onClick = { onNavigate(AppRoute.ReverseCapability) })
-                        ArrowPreference(title = "编辑作战协议", summary = "编辑随逆向能力开关生效的用户提示文本",
-                            onClick = { onNavigate(AppRoute.CombatProtocol) })
-                        ArrowPreference(title = "生图（中转站）", summary = "配置生图服务地址、Key 与模型",
-                            onClick = { onNavigate(AppRoute.ImageGenSettings) })
-                        ArrowPreference(title = "工具边界与组合", summary = "工具白名单与常用组合",
-                            onClick = { onNavigate(AppRoute.ToolBoundaries) })
-                        SwitchPreference(title = "新会话默认带角色", summary = "新建会话自动带上上次使用的角色",
-                            checked = reuseRoleplay, onCheckedChange = { value -> coroutineScope.launch {
-                                SettingsDataStore.setReuseLastRoleplayEnabled(value)
-                            } })
+                        ArrowPreference(
+                            title = "逆向能力",
+                            startAction = { SettingsIcon(Icons.Rounded.Security, tint = SettingsIconColors.Blue) },
+                            onClick = { onNavigate(AppRoute.ReverseCapability) },
+                        )
+                        ArrowPreference(
+                            title = "编辑作战协议",
+                            startAction = { SettingsIcon(Icons.Rounded.Description, tint = SettingsIconColors.Green) },
+                            onClick = { onNavigate(AppRoute.CombatProtocol) },
+                        )
+                        ArrowPreference(
+                            title = "生图（中转站）",
+                            startAction = { SettingsIcon(Icons.Rounded.Palette, tint = SettingsIconColors.Orange) },
+                            onClick = { onNavigate(AppRoute.ImageGenSettings) },
+                        )
+                        ArrowPreference(
+                            title = "工具边界与组合",
+                            startAction = { SettingsIcon(Icons.Rounded.AccountTree, tint = SettingsIconColors.Blue) },
+                            onClick = { onNavigate(AppRoute.ToolBoundaries) },
+                        )
+                        SwitchPreference(
+                            title = "新会话默认带角色",
+                            startAction = { SettingsIcon(Icons.Rounded.SportsBar, tint = SettingsIconColors.Orange) },
+                            checked = reuseRoleplay,
+                            onCheckedChange = { value ->
+                                coroutineScope.launch {
+                                    SettingsDataStore.setReuseLastRoleplayEnabled(value)
+                                }
+                            },
+                        )
                         ArrowPreference(
                             title = "角色",
                             startAction = {

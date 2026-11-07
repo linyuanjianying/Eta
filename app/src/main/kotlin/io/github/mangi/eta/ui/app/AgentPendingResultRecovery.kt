@@ -60,7 +60,7 @@ internal object AgentPendingResultRecovery {
                 )), false)
         }
 
-        val messagesWithResult = stateWithSupplements.messages
+        val messagesWithResult = history.state.messages
             .filterNot { it is SystemNoticeMessageUi && it.id == interruptedNoticeId(runId) }
             .toMutableList()
             .also { messages ->

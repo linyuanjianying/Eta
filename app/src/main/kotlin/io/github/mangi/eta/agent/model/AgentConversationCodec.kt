@@ -46,6 +46,7 @@ internal object AgentConversationCodec {
             .put("role", message.role)
             .also { target ->
                 if (message.messageId.isNotBlank()) target.put("_eta_message_id", message.messageId)
+                if (message.generatedImages) target.put(GENERATED_IMAGE_FLAG, true)
                 if (message.contextSummary) target.put("_eta_context_summary", true)
                 if (message.compactedUserTurns > 0) target.put("_eta_compacted_users", message.compactedUserTurns)
                 if (message.summaryThroughUserTurn > 0) target.put("_eta_summary_through_user", message.summaryThroughUserTurn)
