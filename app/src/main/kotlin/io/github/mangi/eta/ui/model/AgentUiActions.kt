@@ -75,4 +75,6 @@ sealed interface AgentMemoryAction {
     data object Save : AgentMemoryAction
     data object Clear : AgentMemoryAction
     data object DismissNotice : AgentMemoryAction
+    /** 打开知识 / 目标 / 经验管理页（此前这些数据只有模型工具入口）。 */
+    data object OpenKnowledge : AgentMemoryAction
 }

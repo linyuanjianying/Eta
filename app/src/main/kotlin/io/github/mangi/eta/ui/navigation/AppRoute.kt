@@ -37,6 +37,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object SubagentBudget : AppRoute
 
+    /** 知识库 / 会话目标 / 任务经验的本机管理。 */
+    @Serializable
+    data object Knowledge : AppRoute
+
     @Serializable
     data object Skills : AppRoute
 

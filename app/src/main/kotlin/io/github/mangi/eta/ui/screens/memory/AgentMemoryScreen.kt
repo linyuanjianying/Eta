@@ -296,6 +296,12 @@ private fun MemorySettingsGroup(
                 )
                 Divider()
                 CouiPreference(
+                    title = "知识 / 目标 / 经验",
+                    summary = "查看、编辑、删除本机知识条目，管理会话目标与任务经验",
+                    onClick = { onAction(AgentMemoryAction.OpenKnowledge) },
+                )
+                Divider()
+                CouiPreference(
                     title = stringResource(R.string.ui_core_memory_injection_budget_48b5d5),
                     summary = stringResource(R.string.memory_budget_summary, formatNumber(state.coreBudgetChars)),
                     showChevron = false,
@@ -314,6 +320,11 @@ private fun MemorySettingsGroup(
                     checked = state.enabled,
                     enabled = !state.isLoading,
                     onCheckedChange = { onAction(AgentMemoryAction.ToggleEnabled(it)) },
+                )
+                BasicComponent(
+                    title = "知识 / 目标 / 经验",
+                    summary = "查看、编辑、删除本机知识条目，管理会话目标与任务经验",
+                    onClick = { onAction(AgentMemoryAction.OpenKnowledge) },
                 )
                 BasicComponent(
                     title = stringResource(R.string.ui_core_memory_injection_budget_48b5d5),

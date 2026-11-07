@@ -6,6 +6,25 @@ Eta 的免 Root Linux 后端以独立进程运行 [PRoot](https://github.com/ter
 
 APK 的 `assets/native-sources` 附带校验过的原始源码，以及从实际构建入口自动生成的脚本、PTY 源码和补丁包；`assets/licenses` 附带许可证全文。构建脚本与说明位于 [终端原生组件](TERMINAL_NATIVE.md)。这些独立第三方程序保持其开源许可权利，不受 Eta 主项目非商业许可证的附加限制。
 
+## OpenCode 内嵌网关（opencode2api）
+
+Eta 可选地把对话请求交给随 APK 打包的独立子进程 [opencode2api](https://github.com/jasonxu114514/opencode2api)，用于把 OpenCode Zen 的协议转成 OpenAI 兼容接口。该程序是**独立进程**，Eta 不静态链接它的代码；它按 **GPL-3.0-or-later** 分发，不受 Eta 主项目许可的附加限制，其自身权利与义务完全由其许可证决定。
+
+Eta 随包分发的内容（均已核对随 APK 存在）：
+
+| 内容 | 路径 | 说明 |
+| --- | --- | --- |
+| 可执行文件 | `lib/arm64-v8a/libeta_opencode2api.so` | Go/CGO 关闭方式交叉编译的 Android/ARM64 ELF，10 617 128 字节，SHA-256 `a6404e556d42983b3ca2c91385dae6c493dfc6abd526adac45b6104986326c95` |
+| 许可证全文 | `assets/licenses/opencode2api-GPL-3.0-or-later.txt` | GPL-3.0 全文，SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986` |
+| 对应源码 | `assets/third_party/opencode2api-source.zip` | 与上述二进制同一上游提交的完整源码树（105 个文件，其中 66 个 `.go` 文件，含 `go.mod`、`go.sum`、`LICENSE`、构建说明与 Dockerfile），SHA-256 `f218e4d9c434f9a4b0f7a8afb40a3ddf28c4745fa26c674603d07c63e92f7eb7` |
+| 模型目录种子 | `assets/opencode2api-bootstrap-catalog-v3.json` | 网关首次启动时使用的公开、无凭据的模型目录快照；网关随后按自身刷新周期更新 |
+
+固定上游提交：`0bb23c7a7f0b7cbe08c475e7148c56bc477abcf9`（源码包的顶层目录名 `opencode2api-0bb23c7/` 即该提交的前 7 位）。
+
+**源码获取**：APK 内已附完整对应源码，无需另外索取。解压 `assets/third_party/opencode2api-source.zip` 即得到源码树；在装有 Go 1.24 的环境中进入该目录执行 `GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o libeta_opencode2api.so ./cmd/opencode2api`，即可重建同一目标产物（脚本 `scripts/build_opencode2api_android.ps1` 是这一过程的完整实现，并额外校验 ELF 架构与上游提交）。源码包中的 `go.mod`/`go.sum` 固定了全部 Go 依赖版本，可直接由 Go module 代理获取，Eta 不再另外分发这些依赖的源码。
+
+只有 ARM64 随包内置；其他 CPU 架构在设置里关闭本地网关、改用外部 opencode2api 服务即可，此时 APK 不会运行该子进程。
+
 ## models.dev 模型目录
 
 Eta 的离线模型目录快照来自 [models.dev](https://models.dev/api.json)，由 `scripts/update-models-dev-catalog.py` 获取原始 JSON 并压缩后随 APK 分发。models.dev 的目录数据和源码采用 [MIT License](https://github.com/anomalyco/models.dev/blob/dev/LICENSE)，版权归 © 2025 models.dev。版权与许可全文随 APK 保存在 [`assets/licenses/models-dev-MIT.txt`](../app/src/main/assets/licenses/models-dev-MIT.txt)。

@@ -84,6 +84,7 @@ import io.github.mangi.eta.ui.screens.enhance.SystemEnhanceScreen
 import io.github.mangi.eta.ui.screens.home.AgentHomeScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServerDetailScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServersScreen
+import io.github.mangi.eta.ui.screens.memory.AgentKnowledgeScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
@@ -506,6 +507,9 @@ fun AgentAppRoot(
             entry<AppRoute.WebToolsSettings>(swipeDismiss = swipeDismiss) {
                 WebToolsSettingsScreen(onBack = ::popRoute)
             }
+            entry<AppRoute.Knowledge>(swipeDismiss = swipeDismiss) {
+                AgentKnowledgeScreen(onBack = ::popRoute)
+            }
             entry<AppRoute.SubagentBudget>(swipeDismiss = swipeDismiss) {
                 SubagentBudgetScreen(onBack = ::popRoute)
             }
@@ -757,6 +761,7 @@ fun AgentAppRoot(
                             AgentMemoryAction.Save -> memory.saveMemory()
                             AgentMemoryAction.Clear -> memory.clearMemory()
                             AgentMemoryAction.DismissNotice -> memory.dismissMemoryNotice()
+                            AgentMemoryAction.OpenKnowledge -> pushRoute(AppRoute.Knowledge)
                         }
                     },
                 )
