@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.virtualdisplay
 
+import android.app.TaskInfo
 import android.os.Binder
 import android.os.Bundle
 import android.os.IBinder
@@ -96,6 +97,11 @@ internal object VirtualDisplayCommandMain {
                     println(RESULT_PREFIX + result.toString())
                     exitProcess(0)
                 }
+                "capture_scene" -> {
+                    val result = captureMainScene(request)
+                    println(RESULT_PREFIX + result.toString())
+                    exitProcess(0)
+                }
                 else -> {
                     println(RESULT_PREFIX + JSONObject().put("ok", false).put("code", "UNKNOWN_ACTION"))
                     exitProcess(1)
@@ -111,6 +117,54 @@ internal object VirtualDisplayCommandMain {
             exitProcess(1)
         }
     }
+
+
+    /**
+     * 采样主屏现场：顶层任务 id，以及目标包是否已经在主屏上。
+     *
+     * 必须走 root/system 桥——App 进程没有 GET_TASKS，进程内反射会被静默拒绝，
+     * 据此判断「没有主屏任务」会得出错误结论，归还时就会把用户的界面弄丢。
+     */
+    private fun captureMainScene(request: JSONObject): JSONObject {
+        val targetPackage = request.optString("package_name").trim()
+        val tasks = readTasksForScene() ?: return JSONObject().put("ok", false).put("code", "TASKS_UNAVAILABLE")
+        val displayField = TaskInfo::class.java.getField("displayId")
+        val onMain = tasks.filter {
+            runCatching { displayField.getInt(it) }.getOrDefault(Display.INVALID_DISPLAY) == Display.DEFAULT_DISPLAY
+        }
+        val top = onMain.firstOrNull() ?: return JSONObject().put("ok", false).put("code", "NO_MAIN_TASK")
+        val adopted = if (targetPackage.isNotEmpty() && onMain.any { packageOfTask(it) == targetPackage }) {
+            targetPackage
+        } else {
+            ""
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("focus_task_id", top.taskId)
+            .put("adopted_package", adopted)
+    }
+
+    private fun packageOfTask(task: TaskInfo): String =
+        task.topActivity?.packageName
+            ?: task.baseActivity?.packageName
+            ?: task.baseIntent?.component?.packageName
+            ?: task.baseIntent?.`package`
+            ?: ""
+
+    private fun readTasksForScene(): List<TaskInfo>? = runCatching {
+        val atmClass = Class.forName("android.app.ActivityTaskManager")
+        val service = atmClass.getMethod("getService").invoke(null) ?: return@runCatching null
+        val getTasks = service.javaClass.methods.firstOrNull {
+            it.name == "getTasks" && it.parameterCount >= 1
+        } ?: return@runCatching null
+        val raw = when (getTasks.parameterCount) {
+            1 -> getTasks.invoke(service, 50)
+            3 -> getTasks.invoke(service, 50, false, false)
+            4 -> getTasks.invoke(service, 50, false, false, Display.INVALID_DISPLAY)
+            else -> null
+        } as? List<*> ?: return@runCatching null
+        raw.filterIsInstance<TaskInfo>()
+    }.getOrNull()
 
     private fun holdVirtualDisplay(request: JSONObject, reader: BufferedReader) {
         val userId = request.optInt("user_id", 0)
