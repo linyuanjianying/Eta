@@ -1,10 +1,14 @@
 package io.github.mangi.eta.agent.virtualdisplay
 
 import android.app.ActivityOptions
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.ColorSpace
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.hardware.display.DisplayManager
@@ -20,7 +24,6 @@ import android.view.Display
 import android.view.WindowManager
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.scale
-import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceToolContract
@@ -28,6 +31,9 @@ import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.terminal.ShellProcessSupervisor
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
+import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.R
+import io.github.mangi.eta.ui.MainActivity
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.CountDownLatch
@@ -76,6 +82,16 @@ internal object VirtualDisplayController {
     private var lastUiFrameAtElapsedMs: Long = 0L
     private val mutedPackages = linkedSetOf<String>()
 
+    /**
+     * 接管前的主屏现场。用户关掉虚拟屏时要把接管的 app 原样送回主屏，
+     * 再把焦点还给当时的顶层任务——这样用户回到的是原来的界面，而不是我们的 app。
+     */
+    private var restoreFocusTaskId: Int = Display.INVALID_DISPLAY
+    private var adoptedPackage: String = ""
+
+    /** 供 root 桥采样时定位 APK 路径；随每次 ensureVirtualDisplay 刷新。 */
+    private var lastAppContext: Context? = null
+
     fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
         rootAvailable || lsposedAvailable
 
@@ -109,6 +125,7 @@ internal object VirtualDisplayController {
             }
         }
         val appContext = context.applicationContext
+        lastAppContext = appContext
         val (width, height, densityDpi) = resolvePhysicalDisplayMetrics(appContext)
         synchronized(lock) {
             if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null) {
@@ -204,6 +221,8 @@ internal object VirtualDisplayController {
     ): Int? {
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
+        // 接管前采样主屏现场：任务一旦迁到虚拟屏，主屏顶层就变成 Eta 自己了。
+        captureMainDisplayScene(packageName, rootAvailable)
         mutePackageAudioFocusIfPossible(appContext, packageName, rootAvailable)
 
         var launchedByRoot = false
@@ -262,6 +281,7 @@ internal object VirtualDisplayController {
     ): Int? {
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
+        captureMainDisplayScene(intent.component?.packageName.orEmpty(), rootAvailable)
         val started = runCatching {
             val launch = Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
@@ -320,6 +340,9 @@ internal object VirtualDisplayController {
         }
 
         val appContext = context.applicationContext
+        // 用户明确要求把结果留在主屏：清掉现场，避免 release 把焦点抢回别的界面。
+        restoreFocusTaskId = Display.INVALID_DISPLAY
+        adoptedPackage = ""
         restoreMutedPackages(appContext, rootAvailable)
 
         val moved = moveVirtualTaskToMainDisplay(
@@ -336,39 +359,66 @@ internal object VirtualDisplayController {
             Thread.currentThread().interrupt()
         }
 
+        if (moved) {
+            val label = snapshot.appName.ifBlank { snapshot.packageName }
+            showReturnToLingscreen(appContext, label)
+        }
+
         release(appContext, rootAvailable)
         return moved
     }
 
+    private const val RETURN_CHANNEL = "eta_lingscreen_return"
+    private const val RETURN_ID = 1112
+
     /**
-     * 当虚拟屏内部发生跨应用跳转（如从应用 A 跳往应用 B 或拉起授权页）时，同步更新当前虚拟屏承载的包名与应用名。
+     * 「回到灵屏」常驻通知：从虚拟屏跳到真机后挂出来，点它回到 Eta。
      */
-    fun onTopPackageObserved(
-        context: Context,
-        observedPackage: String,
-        rootAvailable: () -> Boolean = { RootAccess.isGranted },
-    ) {
-        val pkg = observedPackage.trim()
-        if (pkg.isBlank() || pkg == "android" || pkg == "com.android.systemui" || pkg == context.packageName) return
-        val current = synchronized(lock) { mutableSnapshots.value }
-        if (!current.active || current.packageName == pkg) return
-        val appContext = context.applicationContext
-        val resolvedName = runCatching {
-            val pm = appContext.packageManager
-            val info = pm.getApplicationInfo(pkg, 0)
-            pm.getApplicationLabel(info).toString().trim().takeIf { it.isNotBlank() }
-        }.getOrNull() ?: pkg
-        mutePackageAudioFocusIfPossible(appContext, pkg, rootAvailable)
-        synchronized(lock) {
-            val latest = mutableSnapshots.value
-            if (latest.active && latest.packageName != pkg) {
-                mutableSnapshots.value = latest.copy(
-                    packageName = pkg,
-                    appName = resolvedName,
-                )
-            }
+    fun showReturnToLingscreen(context: Context, appNameOrPkg: String) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
+        runCatching {
+            val manager = context.getSystemService(NotificationManager::class.java) ?: return
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    RETURN_CHANNEL,
+                    "回到灵屏",
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                ),
+            )
+            val open = PendingIntent.getActivity(
+                context,
+                RETURN_ID,
+                Intent(context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val target = appNameOrPkg.ifBlank { "应用" }
+            manager.notify(
+                RETURN_ID,
+                Notification.Builder(context, RETURN_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(context.getString(R.string.lingscreen_return_title))
+                    .setContentText(context.getString(R.string.lingscreen_return_body, target))
+                    .setCategory(Notification.CATEGORY_STATUS)
+                    .setOngoing(true)
+                    .setContentIntent(open)
+                    .build(),
+            )
         }
     }
+
+    fun dismissReturnToLingscreen(context: Context) {
+        runCatching {
+            context.getSystemService(NotificationManager::class.java)?.cancel(RETURN_ID)
+        }
+    }
+
+    /**
+     * 提取虚拟屏最新一帧的完整 Bitmap 副本（供 observe_screen 使用，调用方负责 recycle）。
+     */
     fun captureScreenshotBitmap(waitUpToMs: Long = 450L): Bitmap? {
         val deadline = SystemClock.elapsedRealtime() + waitUpToMs.coerceAtLeast(0L)
         while (true) {
@@ -511,9 +561,33 @@ internal object VirtualDisplayController {
         context: Context?,
         rootAvailable: () -> Boolean,
     ) {
+        context?.let { dismissReturnToLingscreen(it.applicationContext) }
         highFrequencyPreview = false
+
+        // 先把让用户看见的界面还回去，再拆虚拟屏。
+        // 顺序很关键：DESTROY_CONTENT_ON_REMOVAL 会连任务一起销毁，
+        // 所以必须在 activeDisplayId 复位与快照清空之前完成迁移。
+        if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && adoptedPackage.isNotEmpty()) {
+            runCatching {
+                moveVirtualTaskToMainDisplay(
+                    context = context?.applicationContext ?: return@runCatching,
+                    displayId = activeDisplayId,
+                    packageName = adoptedPackage,
+                    rootAvailable = rootAvailable,
+                )
+            }
+        }
+        val pendingFocus = restoreFocusTaskId
+        restoreFocusTaskId = Display.INVALID_DISPLAY
+        adoptedPackage = ""
+
         activeDisplayId = Display.DEFAULT_DISPLAY
         mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
+
+        // 焦点还原放在状态复位之后：用户看到的是原来的界面，而不是空画布。
+        if (pendingFocus != Display.INVALID_DISPLAY) {
+            restoreMainFocus(pendingFocus)
+        }
 
         if (context != null && mutedPackages.isNotEmpty()) {
             restoreMutedPackages(context.applicationContext, rootAvailable)
@@ -566,6 +640,145 @@ internal object VirtualDisplayController {
         lastUiFrameAtElapsedMs = 0L
     }
 
+
+    /**
+     * 读取任务栈。返回 null 表示「读不到」（App 进程没有 GET_TASKS，且没有 Hook 放行），
+     * 与「读到了但为空」严格区分——前者要回退 root 桥并留痕，后者才是真的没有现场。
+     */
+    private fun mainDisplayTasks(): List<android.app.TaskInfo>? = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            HiddenApiBypass.addHiddenApiExemptions(
+                "Landroid/app/ActivityTaskManager",
+                "Landroid/app/IActivityTaskManager",
+            )
+        }
+        val atmClass = Class.forName("android.app.ActivityTaskManager")
+        val service = atmClass.getMethod("getService").invoke(null) ?: return@runCatching emptyList()
+        val getTasks = service.javaClass.methods.firstOrNull { it.name == "getTasks" && it.parameterCount >= 1 }
+        val raw = when (getTasks?.parameterCount) {
+            1 -> getTasks.invoke(service, 50)
+            3 -> getTasks.invoke(service, 50, false, false)
+            4 -> getTasks.invoke(service, 50, false, false, Display.INVALID_DISPLAY)
+            else -> null
+        } as? List<*> ?: return@runCatching null
+        raw.filterIsInstance<android.app.TaskInfo>()
+    }.getOrNull()
+
+    private fun taskDisplayIdOf(task: android.app.TaskInfo): Int = runCatching {
+        android.app.TaskInfo::class.java.getField("displayId").getInt(task)
+    }.getOrDefault(Display.INVALID_DISPLAY)
+
+    private fun taskPackageOf(task: android.app.TaskInfo): String =
+        task.topActivity?.packageName
+            ?: task.baseActivity?.packageName
+            ?: task.baseIntent.component?.packageName
+            ?: task.baseIntent.`package`
+            ?: ""
+
+    /**
+     * 采样「接管前的主屏现场」：当前顶层任务 id，以及目标包是否已跑在主屏上。
+     * 每个虚拟屏会话只采一次，后续多次 launch 不覆盖，否则用户原来的界面就丢了。
+     */
+    private fun captureMainDisplayScene(targetPackage: String, rootAvailable: () -> Boolean) {
+        if (restoreFocusTaskId != Display.INVALID_DISPLAY) return
+
+        // App 进程的 getTasks 是受限视图：能拿到列表，但 displayId 之类字段不保证填充，
+        // 据此判断主屏现场会得出"没有主屏任务"的错误结论。有 root 时一律以 root 桥为准。
+        if (rootAvailable()) {
+            val viaBridge = captureSceneViaRootBridge(targetPackage, rootAvailable)
+            if (viaBridge != null) {
+                restoreFocusTaskId = viaBridge.first
+                adoptedPackage = viaBridge.second
+                AndroidAgentLogger.info(
+                    "Virtual display scene captured via bridge: focus=$restoreFocusTaskId " +
+                        "adopted=${adoptedPackage.ifEmpty { "-" }}"
+                )
+                return
+            }
+            AndroidAgentLogger.warn("Virtual display scene capture: root bridge unavailable, trying in-process")
+        }
+
+        val tasks = mainDisplayTasks()
+        if (tasks == null) {
+            AndroidAgentLogger.warn("Virtual display scene capture unavailable: cannot read task stack")
+            return
+        }
+
+        val onMainDisplay = tasks.filter { taskDisplayIdOf(it) == Display.DEFAULT_DISPLAY }
+        val top = onMainDisplay.firstOrNull()
+        if (top == null) {
+            // 记录原始读数，避免把"读不到 displayId"误判成"没有主屏任务"。
+            AndroidAgentLogger.warn(
+                "Virtual display scene capture: no task on main display " +
+                    "(raw=${tasks.size}, displayIds=${tasks.take(6).joinToString(",") { taskDisplayIdOf(it).toString() }})"
+            )
+            return
+        }
+        restoreFocusTaskId = top.taskId
+        adoptedPackage = if (targetPackage.isNotBlank() && onMainDisplay.any { taskPackageOf(it) == targetPackage }) {
+            targetPackage
+        } else {
+            ""
+        }
+        AndroidAgentLogger.info(
+            "Virtual display scene captured: focus=$restoreFocusTaskId " +
+                "adopted=${adoptedPackage.ifEmpty { "-" }}"
+        )
+    }
+
+    /** 走 root 桥采样主屏现场，返回 (focusTaskId, adoptedPackage)；失败返回 null。 */
+    private fun captureSceneViaRootBridge(
+        targetPackage: String,
+        rootAvailable: () -> Boolean,
+    ): Pair<Int, String>? {
+        if (!rootAvailable()) return null
+        return runCatching {
+            val apkPath = lastAppContext?.applicationInfo?.sourceDir ?: return@runCatching null
+            val cmd = "CLASSPATH=${DeviceToolContract.quote(apkPath)} app_process /system/bin " +
+                "io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayCommandMain"
+            val req = JSONObject()
+                .put("action", "capture_scene")
+                .put("package_name", targetPackage)
+                .toString() + "\n"
+            val supervisor = ShellProcessSupervisor(rootAvailable = rootAvailable)
+            val proc = supervisor.startShellProcess("root", cmd, mergeStderr = true) ?: return@runCatching null
+            try {
+                proc.outputStream.write(req.toByteArray(Charsets.UTF_8))
+                proc.outputStream.flush()
+                proc.outputStream.close()
+                val out = proc.inputStream.bufferedReader().readText()
+                proc.waitFor(4, TimeUnit.SECONDS)
+                val json = out.substringAfter("ETA_VD_RESULT:", "").trim().ifEmpty { return@runCatching null }
+                val obj = JSONObject(json.substringBefore("\n"))
+                if (!obj.optBoolean("ok")) return@runCatching null
+                val focus = obj.optInt("focus_task_id", Display.INVALID_DISPLAY)
+                if (focus == Display.INVALID_DISPLAY) return@runCatching null
+                focus to obj.optString("adopted_package")
+            } finally {
+                supervisor.beginClosing()
+                if (proc.isAlive) supervisor.terminateAndReap(proc) else supervisor.reapProcess(proc)
+                supervisor.unregisterProcess(proc)
+            }
+        }.getOrNull()
+    }
+
+    /** 把焦点还原到指定主屏任务；失败静默，不影响释放流程。 */
+    private fun restoreMainFocus(taskId: Int): Boolean = runCatching {
+        val atmClass = Class.forName("android.app.ActivityTaskManager")
+        val service = atmClass.getMethod("getService").invoke(null) ?: return@runCatching false
+        val serviceClass = service.javaClass
+        val focused = serviceClass.methods.firstOrNull { it.name == "setFocusedRootTask" && it.parameterCount == 1 }
+        if (focused != null) {
+            focused.invoke(service, taskId)
+            return@runCatching true
+        }
+        val move = serviceClass.methods.firstOrNull {
+            it.name == "moveRootTaskToDisplay" && it.parameterCount == 2
+        } ?: return@runCatching false
+        move.invoke(service, taskId, Display.DEFAULT_DISPLAY)
+        true
+    }.getOrDefault(false)
+
     private fun onFrameAvailable(reader: ImageReader) {
         val image = try {
             reader.acquireLatestImage()
@@ -613,21 +826,6 @@ internal object VirtualDisplayController {
         val width = image.width
         val height = image.height
         if (width <= 0 || height <= 0) return null
-
-        // 优先直接通过 HardwareBuffer 映射，避免不同 ROM Gralloc 行尾 padding 差异导致的 BufferUnderflowException
-        runCatching {
-            image.hardwareBuffer?.use { hb ->
-                val wrapped = Bitmap.wrapHardwareBuffer(hb, ColorSpace.get(ColorSpace.Named.SRGB))
-                if (wrapped != null) {
-                    try {
-                        return wrapped.copy(Bitmap.Config.ARGB_8888, false)
-                    } finally {
-                        if (!wrapped.isRecycled) wrapped.recycle()
-                    }
-                }
-            }
-        }
-
         val plane = image.planes.firstOrNull() ?: return null
         val buffer = plane.buffer ?: return null
         buffer.rewind()
@@ -638,20 +836,12 @@ internal object VirtualDisplayController {
         val paddedWidth = width + rowPadding / pixelStride
         if (paddedWidth < width) return null
 
-        val requiredBytes = paddedWidth * height * 4
-        val safeHeight = if (buffer.remaining() >= requiredBytes) {
-            height
-        } else {
-            (buffer.remaining() / (paddedWidth * 4)).coerceAtMost(height)
-        }
-        if (safeHeight <= 0) return null
-
-        val rawBitmap = Bitmap.createBitmap(paddedWidth, safeHeight, Bitmap.Config.ARGB_8888)
+        val rawBitmap = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
         rawBitmap.copyPixelsFromBuffer(buffer)
-        return if (paddedWidth == width && safeHeight == height) {
+        return if (paddedWidth == width) {
             rawBitmap
         } else {
-            val cropped = Bitmap.createBitmap(rawBitmap, 0, 0, width, safeHeight)
+            val cropped = Bitmap.createBitmap(rawBitmap, 0, 0, width, height)
             rawBitmap.recycle()
             cropped
         }

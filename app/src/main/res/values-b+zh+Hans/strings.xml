@@ -358,6 +358,16 @@
   <string name="ui_xiaobu_xiaoai_compatible_entrance_ae918a">小布/小爱兼容入口</string>
   <string name="ui_display_name_ed16be">展示名称</string>
   <string name="ui_tool_a72ef1">工具</string>
+  <string name="lingscreen_return_title">回到灵屏</string>
+  <string name="lingscreen_return_body">%1$s 已回到真机，点此回到 Eta</string>
+  <string name="task_completion_channel">任务完成</string>
+  <string name="task_completion_ok_title">任务已完成</string>
+  <string name="task_completion_fail_title">任务失败</string>
+  <string name="task_completion_stopped_title">任务已停止</string>
+  <string name="task_completion_ok_body">处理完了，点开看结果</string>
+  <string name="task_completion_capsule_ok">已完成</string>
+  <string name="task_completion_capsule_fail">失败</string>
+  <string name="task_completion_capsule_stopped">已停止</string>
   <string name="ui_tool_ability_9f0f80">工具能力</string>
   <string name="ui_disabled_0fe5a9">已禁用</string>
   <string name="ui_removed_4e5c49">已移除</string>

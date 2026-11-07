@@ -365,6 +365,16 @@
   <string name="ui_xiaobu_xiaoai_compatible_entrance_ae918a">Xiaobu/Xiaoai compatible entrance</string>
   <string name="ui_display_name_ed16be">Display name</string>
   <string name="ui_tool_a72ef1">tool</string>
+  <string name="lingscreen_return_title">Return to Eta</string>
+  <string name="lingscreen_return_body">%1$s is now on your phone — tap to return to Eta</string>
+  <string name="task_completion_channel">Task completion</string>
+  <string name="task_completion_ok_title">Task finished</string>
+  <string name="task_completion_fail_title">Task failed</string>
+  <string name="task_completion_stopped_title">Task stopped</string>
+  <string name="task_completion_ok_body">Done — open to see the result</string>
+  <string name="task_completion_capsule_ok">Done</string>
+  <string name="task_completion_capsule_fail">Failed</string>
+  <string name="task_completion_capsule_stopped">Stopped</string>
   <string name="ui_tool_ability_9f0f80">Tools</string>
   <string name="ui_disabled_0fe5a9">Disabled</string>
   <string name="ui_removed_4e5c49">Removed</string>

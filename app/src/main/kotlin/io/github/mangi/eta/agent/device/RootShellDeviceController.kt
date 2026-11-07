@@ -175,15 +175,8 @@ internal class RootShellDeviceController(
             null
         }
         val nodes = elementObservation?.nodes.orEmpty()
-        if (isVirtual) {
-            val topPkg = elementObservation?.packageName?.ifBlank { null }
-                ?: focus.optString("package").ifBlank { null }
-            if (!topPkg.isNullOrBlank()) {
-                io.github.mangi.eta.agent.runtime.AgentAppContext.resolve()?.let { ctx ->
-                    VirtualDisplayController.onTopPackageObserved(ctx, topPkg, rootAvailable)
-                }
-            }
-        }
+        // 虚拟屏内的顶层包名由 VirtualDisplayCommandMain/快照自行跟踪；
+        // 上游这里不再需要额外的 onTopPackageObserved 旁路。
         val capture = if (includeScreenshot) captureScreenshot(displayId) else ScreenCapture.notRequested()
         val image = capture.image
         val coordinateSpace = if (image?.width != null && image.height != null) {
