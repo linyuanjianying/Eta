@@ -94,6 +94,11 @@ fun AgentToolsScreen(
                             onClick = { onAction(AgentToolsAction.OpenImageGenSettings) },
                         )
                         CouiPreference(
+                            title = "OpenCode 内嵌网关",
+                            summary = "本地 opencode2api 进程与上游 Key / 代理",
+                            onClick = { onAction(AgentToolsAction.OpenOpenCodeGateway) },
+                        )
+                        CouiPreference(
                             title = "工具边界与组合",
                             summary = "白名单只放行指定工具；保存常用组合以便一键套用",
                             onClick = { onAction(AgentToolsAction.OpenToolBoundaries) },
@@ -148,6 +153,11 @@ fun AgentToolsScreen(
                             title = "生图（中转站）",
                             summary = "配置 OpenAI 兼容的 /v1/images/generations，供 generate_image 工具使用",
                             onClick = { onAction(AgentToolsAction.OpenImageGenSettings) },
+                        )
+                        ArrowPreference(
+                            title = "OpenCode 内嵌网关",
+                            summary = "本地 opencode2api 进程与上游 Key / 代理",
+                            onClick = { onAction(AgentToolsAction.OpenOpenCodeGateway) },
                         )
                         ArrowPreference(
                             title = "工具边界与组合",

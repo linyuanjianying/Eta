@@ -48,6 +48,7 @@ sealed interface AgentToolsAction {
     data object OpenWebToolsSettings : AgentToolsAction
     data object OpenImageGenSettings : AgentToolsAction
     data object OpenToolBoundaries : AgentToolsAction
+    data object OpenOpenCodeGateway : AgentToolsAction
 }
 
 sealed interface AgentSkillsAction {

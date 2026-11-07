@@ -29,6 +29,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object ToolBoundaries : AppRoute
 
+    /** 内嵌 OpenCode 网关（本地 opencode2api 进程）。 */
+    @Serializable
+    data object OpenCodeGateway : AppRoute
+
     @Serializable
     data object Skills : AppRoute
 
