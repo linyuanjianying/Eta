@@ -16,6 +16,7 @@ import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
+import io.github.mangi.eta.data.repository.OpenCodeEmbeddedGateway
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.ui.app.PredictiveBackController
@@ -59,6 +60,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         PredictiveBackController.apply(applicationInfo, predictiveBackEnabled)
         AgentMemoryRepository.init(this)
+        OpenCodeEmbeddedGateway.init(this)
         ProviderRepository.init(this)
         McpServerRepository.init(this)
         XposedServiceHelper.registerListener(this)

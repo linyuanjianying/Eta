@@ -174,7 +174,7 @@ internal object RuntimeConfigRepository {
         val profile = ProviderConnectionProfile.forAuthMode(provider.authMode)
         val endpointMode = profile?.endpointMode ?: provider.endpointMode()
         val reasoningCapabilities = reasoningCapabilities(provider, model)
-        return AgentModelClient.ModelConfig(
+        val runtime = AgentModelClient.ModelConfig(
             providerId = provider.id,
             providerName = provider.name,
             providerType = profile?.providerType ?: provider.runtimeProviderType,
@@ -199,6 +199,7 @@ internal object RuntimeConfigRepository {
             customHeaders = provider.customHeaders + model.customHeaders,
             customBody = provider.customBody + model.customBody,
         )
+        return OpenCodeEmbeddedGateway.effectiveModelConfig(provider, runtime)
     }
 
     fun reasoningCapabilities(provider: ProviderSetting, model: Model): ModelReasoningCapabilities? {
