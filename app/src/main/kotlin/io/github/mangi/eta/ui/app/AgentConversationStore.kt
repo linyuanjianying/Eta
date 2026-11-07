@@ -409,6 +409,15 @@ internal object AgentConversationStore {
                 isEdited = isEdited,
             )
 
+            is io.github.mangi.eta.ui.model.GeneratedImageMessageUi -> ConversationMessageEntity(
+                id = id,
+                conversationId = conversationId,
+                sortIndex = sortIndex,
+                type = TYPE_GENERATED_IMAGE,
+                content = caption,
+                imagesJson = images.toJsonArrayString(),
+            )
+
             is AgentMessageUi -> {
                 if (content.isBlank() && isStreaming) {
                     null
@@ -460,6 +469,8 @@ internal object AgentConversationStore {
                 argumentsSummary = argumentsSummary,
                 resultSummary = resultSummary,
                 imageCount = imageCount,
+                // 用户消息存 data URL；工具消息存本地展示副本路径。
+                imagesJson = images.toJsonArrayString(),
             )
 
             is ToolSummaryMessageUi -> ConversationMessageEntity(
@@ -481,6 +492,12 @@ internal object AgentConversationStore {
                 content = content,
                 images = imagesJson.toStringList(),
                 isEdited = isEdited,
+            )
+
+            TYPE_GENERATED_IMAGE -> io.github.mangi.eta.ui.model.GeneratedImageMessageUi(
+                id = id,
+                images = imagesJson.toStringList(),
+                caption = content,
             )
 
             TYPE_ASSISTANT -> AgentMessageUi(
@@ -579,6 +596,7 @@ internal object AgentConversationStore {
     private const val TYPE_THINKING = "thinking"
     private const val TYPE_TOOL = "tool"
     private const val TYPE_TOOL_SUMMARY = "tool_summary"
+    private const val TYPE_GENERATED_IMAGE = "generated_image"
     private const val MESSAGE_LOAD_PAGE_SIZE = 128
     private const val LEGACY_UNNAMED_TITLE = "新对话"
 }

@@ -88,6 +88,20 @@ enum class SystemNoticeCode(val wireValue: String) {
     }
 }
 
+/**
+ * 生图结果。
+ *
+ * 刻意不复用 [UserMessageUi]：那条走的是「用户发出的附件」气泡（右对齐、100dp 缩略图），
+ * 而生成图是助手侧产物，应当左对齐、大图展示，与回复同一视觉层。
+ */
+@Immutable
+data class GeneratedImageMessageUi(
+    override val id: String,
+    val images: List<String>,
+    val prompt: String = "",
+    val caption: String = "",
+) : AgentChatMessageUi
+
 /** Eta 自己生成的消息只保存稳定状态码，展示时再按当前语言解析。 */
 @Immutable
 data class SystemNoticeMessageUi(
@@ -157,6 +171,8 @@ data class ToolActivityMessageUi(
     val command: String? = null,
     val resultSummary: String? = null,
     val imageCount: Int = 0,
+    /** 已落盘的截图展示副本路径；文件缺失时 UI 静默跳过。 */
+    val images: List<String> = emptyList(),
 ) : AgentChatMessageUi
 
 enum class ToolActivityStatusUi {

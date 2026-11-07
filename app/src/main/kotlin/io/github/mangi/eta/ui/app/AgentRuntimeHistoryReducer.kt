@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.app
 import io.github.mangi.eta.agent.model.AgentContextSnapshot
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
+import io.github.mangi.eta.ui.model.GeneratedImageMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
 
 /** live result 与 outbox recovery 共用的 history 幂等提交点。 */
@@ -51,5 +52,21 @@ internal object AgentRuntimeHistoryReducer {
 
     fun wasApplied(state: AgentChatHomeUiState, runId: String): Boolean =
         runId in state.appliedRuntimeRunIds
+
+    private const val GENERATED_IMAGE_ID_PREFIX = "generated-image-"
+
+    /** contentJson 里的 data URL 就是 UI 显示要用的引用，直接抽出来给 MessageImageRow。 */
+    private fun imageReferencesOf(message: AgentModelClient.ConversationMessage): List<String> {
+        val raw = message.contentJson
+        if (raw.isBlank()) return emptyList()
+        val array = runCatching { org.json.JSONArray(raw) }.getOrNull() ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                item.optJSONObject("image_url")?.optString("url")
+                    ?.takeIf { it.isNotBlank() }?.let(::add)
+            }
+        }
+    }
 
 }
