@@ -1,0 +1,71 @@
+#!/bin/bash
+# aapt2 兼容层：让 AGP 在本机（aarch64 Linux）上可用。
+#
+# 背景（为什么需要这个文件）：
+#   1) AGP 9.4.1 的 optimizeReleaseResources 用 `--flag=value` 形式拼参数：
+#        aapt2 optimize <in.ap_> --shorten-resource-paths \
+#              --resource-path-shortening-map=<cfg> -o <out.ap_>
+#      而 aapt2 的 getopt 只接受空格分隔的长选项，遇到 `--x=y` 直接
+#      `unknown option` 并 exit 1。
+#   2) 该进程由 OptimizeResourcesTaskKt.doFullTaskAction 用 try/catch 包裹，
+#      异常被静默吞掉 —— 任务仍然 BUILD SUCCESSFUL，但输出目录里没有
+#      resources-release-optimize.ap_，最终 APK 缺少 AndroidManifest.xml 与
+#      resources.arsc（apksigner 报 Missing AndroidManifest.xml）。
+#
+# 处理方式：把 `--long-option=value` 规范化为 `--long-option value` 再交给
+# 真正的 aapt2。只改参数形式，不改语义，R8 / 资源裁剪行为完全保留。
+#
+# 真机环境：build-tools 里的 aapt2 本体是 x86_64 ELF，aarch64 上需 qemu 直跑。
+#
+# 用法：
+#   ./gradlew assembleRelease \
+#     -Pandroid.aapt2FromMavenOverride="$PWD/scripts/aapt2-compat/aapt2"
+#
+# 可用 AAPT2_REAL 指定真正的 aapt2 路径，默认沿用 build-tools 35.0.0。
+
+set -u
+
+sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/workspace/android-sdk}}"
+real="${AAPT2_REAL:-$sdk_root/build-tools/35.0.0/aapt2.real}"
+
+if [ ! -e "$real" ]; then
+  alt="$sdk_root/build-tools/35.0.0/aapt2"
+  if [ -e "$alt" ] && [ "$alt" != "$0" ]; then
+    real="$alt"
+  else
+    echo "aapt2-compat: 找不到真正的 aapt2（$real）" >&2
+    exit 127
+  fi
+fi
+
+# 规范化 `--opt=value` -> `--opt` `value`（保留 `-o`、位置参数等原样）
+normalized=()
+for arg in "$@"; do
+  case "$arg" in
+    --*=*)
+      normalized+=("${arg%%=*}")
+      normalized+=("${arg#*=}")
+      ;;
+    *)
+      normalized+=("$arg")
+      ;;
+  esac
+done
+
+# 选择可执行方式：x86_64 ELF 在 aarch64 上走 qemu 用户态模拟
+runner=()
+if [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; then
+  magic=$(head -c 4 "$real" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+  if [ "$magic" = "7f454c46" ]; then
+    if command -v qemu-x86_64 >/dev/null 2>&1; then
+      runner=(qemu-x86_64)
+    elif command -v qemu-x86_64-static >/dev/null 2>&1; then
+      runner=(qemu-x86_64-static)
+    fi
+  fi
+fi
+
+if [ ${#runner[@]} -gt 0 ]; then
+  exec "${runner[@]}" "$real" "${normalized[@]}"
+fi
+exec "$real" "${normalized[@]}"

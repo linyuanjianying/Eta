@@ -218,7 +218,7 @@ internal fun SubagentBudgetScreen(onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "以上开关默认关闭；开启后只在本机检索，不上传原始对话。",
+                    text = "以上开关默认关闭；语义检索、智能保留和向量检索可能向所选模型服务发送问题或候选记忆片段，并产生额外用量。",
                     style = MiuixTheme.textStyles.footnote1,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )

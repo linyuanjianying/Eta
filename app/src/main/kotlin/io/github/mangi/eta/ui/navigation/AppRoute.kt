@@ -47,6 +47,16 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object Subagents : AppRoute
 
+    /** 上下文压缩：独立压缩模型、思考强度与摘要提示词。 */
+    @Serializable
+    data object CompactionSettings : AppRoute
+
+    @Serializable
+    data object ReverseCapability : AppRoute
+
+    @Serializable
+    data object CombatProtocol : AppRoute
+
     @Serializable
     data object Characters : AppRoute
 

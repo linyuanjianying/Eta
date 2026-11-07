@@ -26,6 +26,7 @@ import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.skill.SkillRuntime
 import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
+import io.github.mangi.eta.agent.skill.ReverseCapabilityRuntime
 import io.github.mangi.eta.agent.memory.AgentExperienceTrace
 import io.github.mangi.eta.agent.tool.AgentLocalTools
 import io.github.mangi.eta.agent.tool.AgentTaskTool
@@ -112,9 +113,19 @@ internal class AgentRuntimeRunExecutor(
                 cacheRoot = appContext.cacheDir,
                 baseClient = AgentHttpClient.client,
             )
+            // 逆向能力总开关：关闭时逆向技能从索引与读取通道一起消失，作战协议也不注入。
+            val reverseCapability = ReverseCapabilityRuntime.resolve(
+                context = appContext,
+                entries = skillIndexService.listSkillsForManagement(),
+            )
             val skillContext = SkillContext(
-                installedSkills = skillIndexService.listInstalledSkills()
-                    .filter { SkillCompatibilityChecker.evaluate(it).available },
+                installedSkills = ReverseCapabilityRuntime.filterVisible(
+                    entries = skillIndexService.listInstalledSkills(reverseCapability.enabled)
+                        .filter { SkillCompatibilityChecker.evaluate(it).available },
+                    enabled = reverseCapability.enabled,
+                ),
+                reverseModeEnabled = reverseCapability.enabled,
+                reverseSkillIds = reverseCapability.reverseSkillIds,
             )
             val memoryEnabled = runBlocking { AgentMemoryRepository.isEnabled() }
             val uiPayload = request.handoff
@@ -247,6 +258,7 @@ internal class AgentRuntimeRunExecutor(
                 githubSkillSource = githubSkillSource,
                 skillPackageInstaller = skillPackageInstaller,
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
+                reverseCapabilityEnabled = reverseCapability.enabled,
                 pendingSkillConflict = pendingSkillConflict,
                 virtualDisplayEnabled = { currentPermissions().virtualDisplay },
             )
@@ -280,6 +292,7 @@ internal class AgentRuntimeRunExecutor(
             }
             val subagentExecutor = SubagentExecutor(
                 conversationKey = browserKey,
+                combatProtocol = reverseCapability.protocol,
                 parentController = runController,
                 configProvider = {
                     val rawSubagentConfig = runBlocking {
@@ -400,6 +413,7 @@ internal class AgentRuntimeRunExecutor(
                 },
                 capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
                 prompt = request.prompt,
+                combatProtocol = reverseCapability.protocol,
                 assistantScreenContext = request.assistantScreenContext,
                 toolExecutor = runToolExecutor,
                 images = request.images,

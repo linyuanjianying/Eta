@@ -23,10 +23,13 @@ import io.github.mangi.eta.agent.model.AgentFileReferencePolicy
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.roleplay.RoleplayBinding
+import io.github.mangi.eta.agent.roleplay.RoleplayBindingCodec
+import io.github.mangi.eta.agent.roleplay.withLatestCharacter
 import io.github.mangi.eta.agent.roleplay.CharacterMacros
 import io.github.mangi.eta.agent.roleplay.CharacterCardCodec
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageLink
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.CharacterRepository
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.GuiControlStatus
@@ -117,6 +120,7 @@ internal class AgentAppState(
     private var defaultProviderId: String? = null
     private var fileAttachmentOwnerVersion = 0L
     private val conversationLoadMutex = Mutex()
+    private var conversationDraftReuseJob: Job? = null
     private val conversationContentPins = mutableMapOf<String, Int>()
     private var conversationSelectionJob: Job? = null
     private var conversationSelectionVersion = 0L
@@ -985,6 +989,12 @@ internal class AgentAppState(
         }
     }
 
+    /**
+     * 新建会话。
+     *
+     * 普通新会话按「新会话默认带角色」开关沿用上次使用的角色；角色已被删除或绑定无法解析时
+     * 安全回退成普通 Eta 会话。显式从角色详情开始对话（[startCharacterConversation]）不受开关影响。
+     */
     fun createConversation() {
         conversationSelectionVersion += 1
         cancelHistoryPageLoad()
@@ -1002,6 +1012,43 @@ internal class AgentAppState(
         )
         refreshConversationSummaries()
         persistConversations()
+        restoreReusedRoleplayDraft()
+    }
+
+    /** 上次角色要先读偏好在 IO 上解 JSON 并核对角色目录，结果异步补进当前草稿。 */
+    private fun restoreReusedRoleplayDraft() {
+        conversationDraftReuseJob?.cancel()
+        val selectionVersion = conversationSelectionVersion
+        conversationDraftReuseJob = scope.launch {
+            val binding = resolveReusedRoleplayBinding() ?: return@launch
+            // 期间用户已切换到别的会话、开始发送或已填入内容，就不改写当前草稿。
+            if (conversationSelectionVersion != selectionVersion || selectedConversationId != null) return@launch
+            if (!homeState.isConversationLoaded || homeState.isStreaming || homeState.isCompacting) return@launch
+            if (homeState.roleplay != null || homeState.messages.isNotEmpty() || homeState.hasEarlierMessages) return@launch
+            homeState = homeState.copy(roleplay = binding)
+        }
+    }
+
+    /** 开关 + 上次角色 + 角色仍存在；任一不满足都返回 null。 */
+    private suspend fun resolveReusedRoleplayBinding(): RoleplayBinding? = runCatching {
+        if (!SettingsDataStore.reuseLastRoleplayEnabled()) return@runCatching null
+        val stored = RoleplayBindingCodec.decode(SettingsDataStore.lastRoleplayBindingJson())
+            ?: return@runCatching null
+        stored.withLatestCharacter(CharacterRepository.storedCharacter(stored.characterId))
+    }.getOrNull()
+
+    /** 记住本次显式选择的角色，供下次普通新建会话沿用；角色已不存在时清空，避免反复回退。 */
+    private fun rememberLastRoleplay(binding: RoleplayBinding) {
+        scope.launch(Dispatchers.IO) {
+            val stillExists = runCatching {
+                CharacterRepository.storedCharacter(binding.characterId)?.takeIf { !it.archived } != null
+            }.getOrDefault(false)
+            runCatching {
+                SettingsDataStore.setLastRoleplayBindingJson(
+                    if (stillExists) RoleplayBindingCodec.encode(binding) else null,
+                )
+            }
+        }
     }
 
     fun startCharacterConversation(binding: RoleplayBinding, greeting: String) {
@@ -1030,6 +1077,8 @@ internal class AgentAppState(
         conversationPaneState = conversationPaneState.copy(selectedConversationId = id, searchQuery = "")
         refreshConversationSummaries()
         persistConversations()
+        // 显式选角色流程照旧，另外记下这次选择，供下次普通新建会话沿用。
+        rememberLastRoleplay(binding)
     }
 
     fun selectReplyCandidate(messageId: String, index: Int) {
@@ -1190,6 +1239,17 @@ internal class AgentAppState(
         submittedText: String?,
         immediateInterrupt: Boolean,
     ) {
+        val restoreJob = conversationDraftReuseJob
+        if (restoreJob?.isActive == true) {
+            val selectionVersion = conversationSelectionVersion
+            scope.launch {
+                restoreJob.join()
+                if (selectionVersion == conversationSelectionVersion) {
+                    submitOrQueueCurrentMessage(submittedText, immediateInterrupt)
+                }
+            }
+            return
+        }
         if (!homeState.isConversationLoaded || homeState.isCompacting ||
             selectedConversationId in pendingConversationDeletes) return
         val prompt = (submittedText ?: homeState.input).trim()

@@ -50,6 +50,10 @@ data class SkillCompatibilityResult(
 @Immutable
 data class SkillContext(
     val installedSkills: List<SkillIndexEntry> = emptyList(),
+    /** 逆向能力总开关是否开启；索引已按此过滤，这里再留一份供提示词分组与偏置使用。 */
+    val reverseModeEnabled: Boolean = false,
+    /** 当前索引里属于逆向集合的技能 ID；关闭总开关时为空集合。 */
+    val reverseSkillIds: Set<String> = emptySet(),
 ) {
     companion object {
         val EMPTY = SkillContext()

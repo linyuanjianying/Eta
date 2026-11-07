@@ -23,6 +23,7 @@ import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
+import io.github.mangi.eta.data.repository.AgentCombatProtocolSnapshot
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -112,6 +113,8 @@ internal object AgentModelClient {
         compactionTarget: (() -> AgentCompactionTarget)? = null,
         /** 生图工具是否可用；由调用方一次性读取设置，避免每轮工具目录都去读 DataStore。 */
         imageGenEnabled: Boolean = false,
+        /** 用户自备的作战协议（纯文本数据）；由 Runtime 每轮准备阶段读取一次，为空即不注入。 */
+        combatProtocol: AgentCombatProtocolSnapshot = AgentCombatProtocolSnapshot.EMPTY,
         /** 本地轮次上限，0 表示不设限（主 run 由模型自然结束）。子代理必须给值。 */
         maxRounds: Int = 0,
         /**
@@ -140,6 +143,7 @@ internal object AgentModelClient {
             rootAvailable = initialCapabilities.rootAvailable,
             roleplayContext = roleplayContext,
             executionContext = executionContext,
+            combatProtocol = combatProtocol,
         )
         if (rewriteReply) {
             messages.put(messages.length() - 1, AgentConversationCodec.userTextMessage(
@@ -159,6 +163,7 @@ internal object AgentModelClient {
         // 旧 history 中的无效消息可能在组装时被跳过，系统边界不能由 history 条数倒推。
         val systemCount = AgentPromptBuilder.buildSystemMessages(
             config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext, executionContext,
+            combatProtocol,
         ).length()
         fun toolsFor(capabilities: AgentToolCapabilities): JSONArray {
             if (rewriteReply) return JSONArray()
@@ -206,6 +211,7 @@ internal object AgentModelClient {
             if (capabilities.rootAvailable != promptRootAvailable) {
                 val systemMessages = AgentPromptBuilder.buildSystemMessages(
                     config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext, executionContext,
+                    combatProtocol,
                 )
                 for (index in 0 until systemMessages.length()) {
                     messages.put(index, systemMessages.getJSONObject(index))

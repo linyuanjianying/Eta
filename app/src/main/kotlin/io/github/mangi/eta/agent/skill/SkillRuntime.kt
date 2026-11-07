@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.db.SkillRegistryEntity
+import io.github.mangi.eta.data.repository.ReverseCapabilitySettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -257,13 +258,34 @@ class SkillIndexService(
             }
         }
 
+    /**
+     * 运行时可见技能：已安装、已启用，并且通过逆向能力总开关。
+     *
+     * 总开关默认开启；关闭时逆向技能从列表、查找与读取三条通道一起消失。
+     * 管理页仍使用 [listSkillsForManagement]（保留全部条目，含被屏蔽项），不受影响。
+     */
     fun listInstalledSkills(): List<SkillIndexEntry> =
-        listSkillsForManagement().filter { it.installed && it.enabled }
+        listInstalledSkills(reverseCapabilityEnabled = ReverseCapabilitySettings.isEnabled(context))
 
-    fun findInstalledSkill(identifier: String): SkillIndexEntry? {
+    /** 显式传入开关状态的版本，供同一轮 run 内保持一致口径。 */
+    fun listInstalledSkills(reverseCapabilityEnabled: Boolean): List<SkillIndexEntry> =
+        listSkillsForManagement()
+            .filter { it.installed && it.enabled }
+            .filter { ReverseCapabilityRuntime.isSkillVisible(it, reverseCapabilityEnabled) }
+
+    fun findInstalledSkill(identifier: String): SkillIndexEntry? = findInstalledSkill(
+        identifier = identifier,
+        reverseCapabilityEnabled = ReverseCapabilitySettings.isEnabled(context),
+    )
+
+    /** 按 ID / 名称 / 路径查找可见技能；被总开关屏蔽的逆向技能按「不存在」处理。 */
+    fun findInstalledSkill(
+        identifier: String,
+        reverseCapabilityEnabled: Boolean,
+    ): SkillIndexEntry? {
         val normalized = SkillParser.normalizeSkillLookup(identifier)
         if (normalized.isBlank()) return null
-        val entries = listSkillsForManagement().filter { it.installed && it.enabled }
+        val entries = listInstalledSkills(reverseCapabilityEnabled)
         return entries.firstOrNull { SkillParser.normalizeSkillLookup(it.id) == normalized }
             ?: entries.firstOrNull { SkillParser.normalizeSkillLookup(it.name) == normalized }
             ?: entries.firstOrNull { SkillParser.normalizeSkillLookup(it.skillFilePath) == normalized }

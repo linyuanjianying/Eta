@@ -44,6 +44,11 @@ internal object CharacterRepository {
 
     suspend fun get(id: String): CharacterProfile? = withContext(Dispatchers.IO) { dao().character(id)?.toProfile() }
 
+    /** 原始行（含归档标记）；新会话沿用角色时用它判断角色是否仍在目录里。不抛异常。 */
+    internal suspend fun storedCharacter(id: String): CharacterEntity? = withContext(Dispatchers.IO) {
+        runCatching { dao().character(id) }.getOrNull()
+    }
+
     suspend fun create(card: CharacterCard, avatarBytes: ByteArray? = null): CharacterProfile = withContext(Dispatchers.IO) {
         val validated = validated(card)
         createStored(validated, avatarBytes?.let(::normalizeAvatar))
@@ -149,6 +154,21 @@ internal object CharacterRepository {
         require(persona.name.isNotBlank() && persona.name.length <= 256) { "用户名称需为 1 至 256 个字符" }
         require(persona.description.toByteArray(Charsets.UTF_8).size <= 1024 * 1024) { "用户设定超过 1 MiB 限制" }
         dao().upsertPersona(UserPersonaEntity(name = persona.name.trim(), description = persona.description))
+    }
+
+    /** 上次开始角色会话的绑定（保存时已校验角色存在）；当前绑定缺失时只补用户人设。 */
+    suspend fun refreshLastUsed(lastUsed: RoleplayBinding) = withContext(Dispatchers.IO) {
+        val entity = runCatching { dao().character(lastUsed.characterId) }.getOrNull()
+            ?.takeIf { !it.archived } ?: return@withContext lastUsed
+        val persona = runCatching { persona() }.getOrDefault(UserPersona())
+        val card = runCatching { CharacterCardCodec.decodeJson(entity.cardJson) }.getOrNull()
+        lastUsed.copy(
+            cardSnapshotJson = card?.let(CharacterCardCodec::encodeJson) ?: lastUsed.cardSnapshotJson,
+            characterName = card?.name?.takeIf(String::isNotBlank) ?: entity.name,
+            avatarPath = entity.avatarPath,
+            userName = persona.name,
+            userDescription = persona.description,
+        )
     }
 
     suspend fun binding(id: String): RoleplayBinding {

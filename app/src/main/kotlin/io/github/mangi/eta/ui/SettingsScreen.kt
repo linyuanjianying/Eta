@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FilterAlt
@@ -70,6 +71,7 @@ import com.itos.coui.layout.Group
 import com.itos.coui.text.CouiTextKind
 import com.itos.coui.text.Text as CouiText
 import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
@@ -179,6 +181,8 @@ private fun SettingsPageContent(
     onBack: () -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val reuseRoleplay by SettingsDataStore.reuseLastRoleplayEnabledFlow().collectAsState(initial = true)
+
     val capabilities = rememberDeviceCapabilities()
     val enhancementHistory = remember(context.applicationContext) { EnhancementSettingsHistory(context) }
     var hasConnectedFramework by remember { mutableStateOf(enhancementHistory.hasConnected) }
@@ -397,6 +401,13 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiPreference(
+                        title = "上下文压缩设置",
+                        summary = "独立压缩模型、思考强度与摘要提示词",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Compress, SettingsIconColors.Green) },
+                        onClick = { onNavigate(AppRoute.CompactionSettings) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
                         title = stringResource(R.string.ui_memory_b55ff5),
                         icon = {
                             CouiSettingsIcon(
@@ -441,6 +452,18 @@ private fun SettingsPageContent(
                         onClick = { onNavigate(AppRoute.McpServers) },
                     )
                     CouiIconDivider()
+                    CouiPreference(title = "逆向能力", summary = "管理逆向技能与作战协议的统一开关",
+                        onClick = { onNavigate(AppRoute.ReverseCapability) })
+                    CouiPreference(title = "编辑作战协议", summary = "编辑随逆向能力开关生效的用户提示文本",
+                        onClick = { onNavigate(AppRoute.CombatProtocol) })
+                    CouiPreference(title = "生图（中转站）", summary = "配置生图服务地址、Key 与模型",
+                        onClick = { onNavigate(AppRoute.ImageGenSettings) })
+                    CouiPreference(title = "工具边界与组合", summary = "工具白名单与常用组合",
+                        onClick = { onNavigate(AppRoute.ToolBoundaries) })
+                    CouiSwitchPreference(title = "新会话默认带角色", summary = "新建会话自动带上上次使用的角色",
+                        checked = reuseRoleplay, onCheckedChange = { value -> coroutineScope.launch {
+                            SettingsDataStore.setReuseLastRoleplayEnabled(value)
+                        } })
                     CouiPreference(
                         title = "角色",
                         icon = {
@@ -868,6 +891,17 @@ private fun SettingsPageContent(
                             iconTint = SettingsIconColors.Blue,
                         )
                         ArrowPreference(
+                            title = "上下文压缩设置",
+                            summary = "独立压缩模型、思考强度与摘要提示词",
+                            startAction = {
+                                SettingsIcon(
+                                    icon = Icons.Rounded.Compress,
+                                    tint = SettingsIconColors.Green,
+                                )
+                            },
+                            onClick = { onNavigate(AppRoute.CompactionSettings) },
+                        )
+                        ArrowPreference(
                             title = stringResource(R.string.ui_memory_b55ff5),
                             startAction = {
                                 SettingsIcon(
@@ -907,6 +941,18 @@ private fun SettingsPageContent(
                             },
                             onClick = { onNavigate(AppRoute.McpServers) },
                         )
+                        ArrowPreference(title = "逆向能力", summary = "管理逆向技能与作战协议的统一开关",
+                            onClick = { onNavigate(AppRoute.ReverseCapability) })
+                        ArrowPreference(title = "编辑作战协议", summary = "编辑随逆向能力开关生效的用户提示文本",
+                            onClick = { onNavigate(AppRoute.CombatProtocol) })
+                        ArrowPreference(title = "生图（中转站）", summary = "配置生图服务地址、Key 与模型",
+                            onClick = { onNavigate(AppRoute.ImageGenSettings) })
+                        ArrowPreference(title = "工具边界与组合", summary = "工具白名单与常用组合",
+                            onClick = { onNavigate(AppRoute.ToolBoundaries) })
+                        SwitchPreference(title = "新会话默认带角色", summary = "新建会话自动带上上次使用的角色",
+                            checked = reuseRoleplay, onCheckedChange = { value -> coroutineScope.launch {
+                                SettingsDataStore.setReuseLastRoleplayEnabled(value)
+                            } })
                         ArrowPreference(
                             title = "角色",
                             startAction = {

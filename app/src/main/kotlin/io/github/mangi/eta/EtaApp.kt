@@ -13,6 +13,8 @@ import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.repository.ReverseCapabilitySettings
+import io.github.mangi.eta.data.repository.AgentCombatProtocolRepository
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
@@ -58,6 +60,10 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         RootAccess.initialize(this)
         applicationScope.launch { TerminalRuntime.backgroundJobs(this@EtaApp).resume() }
         SettingsDataStore.init(this)
+        // 逆向能力总开关与作战协议：原子开关文件 + filesDir/prompts，
+        // 不参与 DataStore 迁移，Runtime 与本进程在各处直接读取。
+        ReverseCapabilitySettings.init(this)
+        AgentCombatProtocolRepository.init(this)
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled
         }

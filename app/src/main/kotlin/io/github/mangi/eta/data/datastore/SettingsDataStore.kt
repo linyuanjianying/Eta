@@ -150,6 +150,10 @@ internal object SettingsDataStore {
     private val APPEARANCE_PREDICTIVE_BACK_ENABLED =
         booleanPreferencesKey("appearance_predictive_back_enabled")
     private val APPEARANCE_INTERFACE_SCALE = floatPreferencesKey("appearance_interface_scale")
+    /** 新会话是否自动带上上次使用的角色。 */
+    private val REUSE_LAST_ROLEPLAY = booleanPreferencesKey("reuse_last_roleplay")
+    /** 上次使用的角色绑定（JSON，只存本机）。 */
+    private val LAST_ROLEPLAY_JSON = stringPreferencesKey("last_roleplay_json")
     private const val SELECTED_MODEL_BY_PROVIDER_PREFIX = "selected_model_id_by_provider."
 
     private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = STORE_NAME)
@@ -247,6 +251,46 @@ internal object SettingsDataStore {
     suspend fun setSmartRetainEnabled(enabled: Boolean) {
         ensureInitialized()
         dataStore.edit { it[SMART_RETAIN_ENABLED] = enabled }
+    }
+
+    /** 新会话自动带上上次角色的开关；默认开启。 */
+    suspend fun reuseLastRoleplayEnabled(): Boolean = readFlag(REUSE_LAST_ROLEPLAY, true)
+
+    fun reuseLastRoleplayEnabledFlow(): Flow<Boolean> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+            .map { it[REUSE_LAST_ROLEPLAY] ?: true }
+    }
+
+    suspend fun setReuseLastRoleplayEnabled(enabled: Boolean) {
+        ensureInitialized()
+        dataStore.edit { it[REUSE_LAST_ROLEPLAY] = enabled }
+    }
+
+    /** 上次使用的角色绑定 JSON；没有则 null。 */
+    suspend fun lastRoleplayBindingJson(): String? {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+            .map { it[LAST_ROLEPLAY_JSON]?.takeIf(String::isNotBlank) }
+            .first()
+    }
+
+    fun lastRoleplayBindingFlow(): Flow<String?> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+            .map { it[LAST_ROLEPLAY_JSON]?.takeIf(String::isNotBlank) }
+    }
+
+    /** 传入 null 或空白表示清空上次角色（例如角色被删除）。 */
+    suspend fun setLastRoleplayBindingJson(json: String?) {
+        ensureInitialized()
+        dataStore.edit { prefs ->
+            val value = json?.takeIf(String::isNotBlank)
+            if (value == null) prefs.remove(LAST_ROLEPLAY_JSON) else prefs[LAST_ROLEPLAY_JSON] = value
+        }
     }
 
     private suspend fun readFlag(key: Preferences.Key<Boolean>, default: Boolean): Boolean {

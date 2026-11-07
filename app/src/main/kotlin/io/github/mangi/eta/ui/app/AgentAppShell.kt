@@ -613,6 +613,9 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Knowledge -> "知识 / 目标 / 经验"
     is AppRoute.Skills -> stringResource(R.string.route_skills)
     is AppRoute.Subagents -> "Subagent"
+    is AppRoute.ReverseCapability -> "逆向能力"
+    is AppRoute.CombatProtocol -> "编辑作战协议"
+    is AppRoute.CompactionSettings -> "上下文压缩"
     is AppRoute.Characters -> "角色"
     is AppRoute.CharacterDetail -> "角色详情"
     is AppRoute.CharacterEditor -> "编辑角色"

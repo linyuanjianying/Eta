@@ -32,6 +32,7 @@ internal class SubagentExecutor(
     private val executionContext: TerminalExecutionContext?,
     private val onProgress: (AgentEvent.SubagentProgress) -> Unit,
     private val nanoTime: () -> Long = System::nanoTime,
+    private val combatProtocol: io.github.mangi.eta.data.repository.AgentCombatProtocolSnapshot = io.github.mangi.eta.data.repository.AgentCombatProtocolSnapshot.EMPTY,
 ) {
     private val latestSnapshots = ConcurrentHashMap<String, String>()
 
@@ -179,6 +180,7 @@ internal class SubagentExecutor(
                 history = priorHistory,
                 runController = childController,
                 skillContext = skillContext,
+                combatProtocol = combatProtocol,
                 memoryContext = memoryContext,
                 additionalTools = profile.filterTools(mcpTools),
                 executionContext = executionContext,

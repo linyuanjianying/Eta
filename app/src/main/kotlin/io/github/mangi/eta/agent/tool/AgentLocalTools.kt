@@ -36,6 +36,8 @@ import io.github.mangi.eta.agent.runtime.GuiControlCoordinator
 import io.github.mangi.eta.agent.virtualdisplay.CanvasRoutingPolicy
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
 import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
+import io.github.mangi.eta.agent.skill.ReverseCapabilityRuntime
+import io.github.mangi.eta.agent.skill.SkillIndexEntry
 import io.github.mangi.eta.agent.skill.SkillIndexService
 import io.github.mangi.eta.agent.skill.SkillInstallErrorCode
 import io.github.mangi.eta.agent.skill.SkillInstallResult
@@ -110,6 +112,8 @@ internal class AgentLocalTools(
     private val githubSkillSource: PublicGitHubSkillSource? = null,
     private val skillPackageInstaller: SkillPackageInstaller? = null,
     runAvailableSkillIds: Set<String> = emptySet(),
+    /** 逆向能力总开关（本 run 内固定）；关闭时逆向技能对 skills_list / skills_read / skills_read_resource 不可见。 */
+    reverseCapabilityEnabled: Boolean = true,
     pendingSkillConflict: PendingSkillConflictCapability? = null,
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
     private val virtualDisplayEnabled: () -> Boolean = {
@@ -165,6 +169,7 @@ internal class AgentLocalTools(
     private val publishedObservation = AtomicReference(PublishedObservation())
     private val runAvailableSkillIds = runAvailableSkillIds
         .mapTo(mutableSetOf(), SkillParser::normalizeSkillLookup)
+    private val reverseCapabilityEnabled = reverseCapabilityEnabled
     private val mutatedSkillIds = ConcurrentHashMap.newKeySet<String>()
     private val skillTreeMutationUncertain = AtomicBoolean(false)
     private val pendingSkillConflict = AtomicReference(pendingSkillConflict)
@@ -1247,7 +1252,7 @@ internal class AgentLocalTools(
             ?: return errorResult("SKILLS_UNAVAILABLE", "技能服务未初始化")
         val query = args.optString("query").trim().lowercase()
         val limit = args.optInt("limit", 50).coerceIn(1, 200)
-        val entries = indexService.listInstalledSkills()
+        val entries = indexService.listInstalledSkills(reverseCapabilityEnabled)
             .filter { entry -> SkillCompatibilityChecker.evaluate(entry).available }
             .filter { entry -> isVisibleInCurrentRun(entry.id) }
             .filter { entry ->
@@ -1292,9 +1297,13 @@ internal class AgentLocalTools(
         val skillId = args.optString("skillId").trim()
         if (skillId.isBlank()) return errorResult("MISSING_PARAM", "缺少 skillId")
         val maxChars = args.optInt("maxChars", 16_000).coerceIn(512, 64_000)
-        val entry = indexService.findInstalledSkill(skillId)
+        val entry = indexService.findInstalledSkill(skillId, reverseCapabilityEnabled)
             ?: return errorResult("NOT_FOUND", "未找到 skill：$skillId")
         if (!isVisibleInCurrentRun(entry.id)) return nextTurnRequired(entry.id)
+        if (!isAllowableByReverseSwitch(entry)) return errorResult(
+            "SKILL_DISABLED",
+            "技能 $skillId 属于逆向能力集合，当前已由「逆向能力」总开关屏蔽",
+        )
         val compat = SkillCompatibilityChecker.evaluate(entry)
         if (!compat.available) return errorResult("INCOMPATIBLE", compat.reason ?: "当前环境不可用")
         val resolved = loader.load(entry, "agent 主动读取 skill")
@@ -1332,9 +1341,13 @@ internal class AgentLocalTools(
         val skillId = args.getString("skillId").trim()
         val relativePath = args.getString("relativePath").trim()
         val maxChars = args.optInt("maxChars", 16_000).coerceIn(512, 64_000)
-        val entry = indexService.findInstalledSkill(skillId)
+        val entry = indexService.findInstalledSkill(skillId, reverseCapabilityEnabled)
             ?: return errorResult("NOT_FOUND", "未找到已启用 Skill：$skillId")
         if (!isVisibleInCurrentRun(entry.id)) return nextTurnRequired(entry.id)
+        if (!isAllowableByReverseSwitch(entry)) return errorResult(
+            "SKILL_DISABLED",
+            "技能 $skillId 属于逆向能力集合，当前已由「逆向能力」总开关屏蔽",
+        )
         val compatibility = SkillCompatibilityChecker.evaluate(entry)
         if (!compatibility.available) {
             return errorResult(
@@ -1589,6 +1602,15 @@ internal class AgentLocalTools(
         val normalized = SkillParser.normalizeSkillLookup(skillId)
         return normalized in runAvailableSkillIds && normalized !in mutatedSkillIds
     }
+
+    /**
+     * 逆向能力总开关过滤：关闭时逆向技能在运行时直接不可见。
+     *
+     * 三道通道都走这里，避免「索引过滤了、skills_read 还能读到」的绕过：
+     * `skills_list` 的枚举、`skills_read` 的正文、`skills_read_resource` 的引用资源。
+     */
+    private fun isAllowableByReverseSwitch(entry: SkillIndexEntry): Boolean =
+        ReverseCapabilityRuntime.isSkillVisible(entry, reverseCapabilityEnabled)
 
     private fun nextTurnRequired(skillId: String): String = errorResult(
         "NEXT_TURN_REQUIRED",

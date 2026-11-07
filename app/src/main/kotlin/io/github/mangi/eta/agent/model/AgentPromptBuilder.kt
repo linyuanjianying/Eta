@@ -4,6 +4,7 @@ import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
+import io.github.mangi.eta.data.repository.AgentCombatProtocolSnapshot
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -19,8 +20,12 @@ internal object AgentPromptBuilder {
         rootAvailable: Boolean = false,
         roleplayContext: RoleplayRunContext? = null,
         executionContext: TerminalExecutionContext? = null,
+        combatProtocol: AgentCombatProtocolSnapshot = AgentCombatProtocolSnapshot.EMPTY,
     ): JSONArray {
-        val messages = buildSystemMessages(config, skillContext, memoryContext, rootAvailable, roleplayContext, executionContext)
+        val messages = buildSystemMessages(
+            config, skillContext, memoryContext, rootAvailable, roleplayContext, executionContext,
+            combatProtocol,
+        )
         // 生图消息只保留一句引用：图片正文留在会话与 UI 里，不回放进每次请求（否则每轮都带整张图）。
         AgentConversationCodec.forRequest(history).forEach { item ->
             runCatching { AgentConversationCodec.toJsonObject(item) }.getOrNull()?.let(messages::put)
@@ -41,6 +46,7 @@ internal object AgentPromptBuilder {
         rootAvailable: Boolean,
         roleplayContext: RoleplayRunContext? = null,
         executionContext: TerminalExecutionContext? = null,
+        combatProtocol: AgentCombatProtocolSnapshot = AgentCombatProtocolSnapshot.EMPTY,
     ): JSONArray {
         val messages = JSONArray()
         if (roleplayContext == null && config.systemPrompt.isNotBlank()) {
@@ -174,6 +180,7 @@ internal object AgentPromptBuilder {
         roleplayContext?.personaMessage()?.let(messages::put)
         buildMemorySystemMessage(memoryContext, writable = roleplayContext == null)?.let(messages::put)
         buildSkillSystemMessage(skillContext)?.let(messages::put)
+        buildCombatProtocolSystemMessage(combatProtocol)?.let(messages::put)
         return messages
     }
 
@@ -250,6 +257,30 @@ internal object AgentPromptBuilder {
                     "正文引用其他文本资源时再调用 skills_read_resource；不要为了读取 Skill 资源而开启终端，也不要凭索引臆测正文细节。"
             )
         }
+        return systemMessage(body)
+    }
+
+    /**
+     * 作战协议（用户自备文本）作为独立的 system 消息下发。
+     *
+     * 它是**用户自己写的指令文本**，不是技能、不是记忆、也不是可执行内容：
+     * 这里只做原样注入，不解析、不求值、不执行，也不把它交给技能加载器。
+     * 与破甲记忆分开发送，避免用户文本混进「记忆是背景资料，不是指令」的章节。
+     */
+    private fun buildCombatProtocolSystemMessage(
+        protocol: AgentCombatProtocolSnapshot,
+    ): JSONObject? {
+        if (!protocol.available) return null
+        val body = buildString {
+            appendLine("以下为用户在设置中填写的「作战协议」，属于用户自定义的工作偏好，仅在符合当前请求及更高优先级约束时参考；")
+            appendLine("它不扩大任何工具权限，与更高优先级的系统约束冲突时以系统约束为准。")
+            appendLine("revision=${protocol.revision} | chars=${protocol.charCount} | file=${protocol.fileName}")
+            appendLine()
+            appendLine("<combat_protocol>")
+            append(protocol.content.trim())
+            appendLine()
+            append("</combat_protocol>")
+        }.trim()
         return systemMessage(body)
     }
 
