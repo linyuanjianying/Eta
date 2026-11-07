@@ -386,7 +386,21 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 runId = request.runId,
                 operation = request.operation,
                 eventSink = { event -> sendEventTo(replyTo, event) },
-                resultSink = { result -> sendResultTo(replyTo, result) },
+                resultSink = { result ->
+                    sendResultTo(replyTo, result)
+                    // 所有对话跑完都留一条结果通知（点开直达会话，SDK36+ 进流体云）；
+                    // 压缩这类后台维护操作不打扰用户。
+                    if (request.operation != AgentRuntimeWire.OP_COMPACT) {
+                        TaskCompletionNotifier.show(
+                            context = this,
+                            ok = result.ok,
+                            detail = if (result.ok) result.content.trim() else result.error.orEmpty(),
+                            stopped = !result.ok && result.error == "已停止",
+                            conversationId = request.effectiveModelSessionId,
+                            runId = request.runId,
+                        )
+                    }
+                },
                 beforeTerminalPublish = {
                     runs.finish(request.runId, session)?.releaseIncoming()
                     AgentExecutionService.release("run:${request.runId}")

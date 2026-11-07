@@ -101,6 +101,9 @@ internal object TaskCompletionNotifier {
         val intent = Intent(context, io.github.mangi.eta.ui.MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (conversationId.isNotBlank()) {
+            // 必须带 ACTION_OPEN_CONVERSATION_ID：MainActivity 只在识别到这个 action 时才消费
+            // EXTRA_CONVERSATION_ID，只塞 extra 的话点通知只会回到默认会话。
+            intent.action = io.github.mangi.eta.ui.MainActivity.ACTION_OPEN_CONVERSATION_ID
             intent.putExtra(io.github.mangi.eta.ui.MainActivity.EXTRA_CONVERSATION_ID, conversationId)
         }
         return PendingIntent.getActivity(
