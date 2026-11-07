@@ -266,7 +266,9 @@ internal object OpenCodeEmbeddedGateway {
         }
         stopLocked()
         val reason = runCatching { logFile.readText().takeLast(420) }.getOrDefault("")
-        error("本地网关未能在 14 秒内启动；${reason.replace(Regex("[\\r\\n]+"), " ").take(220)}")
+        // 子进程日志原文不进 UI/异常文本：网关的配置错误信息可能带上游 URL 与账号片段，
+        // 这里只给分类提示，细节留给「诊断」入口按需读取。
+        error("本地网关未能在 14 秒内启动；${classifyGatewayLog(reason)}")
     }
 
     /** 503 is expected until OpenCode finishes fetching its model catalogue. */

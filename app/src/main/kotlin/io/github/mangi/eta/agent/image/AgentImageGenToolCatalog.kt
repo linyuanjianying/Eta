@@ -99,7 +99,9 @@ internal object AgentImageGenToolCatalog {
                         .put("model", outcome.result.model)
                         .put("count", outcome.result.files.size)
                         .put("paths", paths)
-                        .put("prompt", prompt)
+                        // 不回显提示词：工具结果会写进持久会话，而用户可能在提示词里写到
+                        // 私人内容（病名、住址、人名）。图片本身是会话资产，提示词不必再存一份。
+
                         // 参数被降级时明说，避免模型以为真的拿到了请求的张数/尺寸。
                         .put("adjustments", notes)
                         .toString(),

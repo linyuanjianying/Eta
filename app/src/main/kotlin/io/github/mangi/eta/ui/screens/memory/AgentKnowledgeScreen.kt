@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -14,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -92,6 +94,10 @@ internal fun AgentKnowledgeScreen(onBack: () -> Unit) {
     var goalText by remember { mutableStateOf("") }
     var goalCompleted by remember { mutableStateOf(false) }
     var planSummary by remember { mutableStateOf("") }
+    var conversationChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    // 刷新信号：模型可能在同一时间用 knowledge_save 写入，用户回到本页时对象不会是新的
+    // （仓库没有变更流），所以每次回到前台/重新进入都主动重读一次。
+    var refreshTick by remember { mutableStateOf(0) }
 
     var experienceCount by remember { mutableStateOf(0) }
     var autoExperience by remember { mutableStateOf(false) }
@@ -100,31 +106,37 @@ internal fun AgentKnowledgeScreen(onBack: () -> Unit) {
 
     fun reload() {
         scope.launch {
-            val snapshot = withContext(Dispatchers.IO) {
-                runCatching {
-                    Triple(
-                        AgentKnowledgeRepository.snapshot(),
-                        Triple(
-                            runCatching { AgentExperienceRepository.count() }.getOrDefault(0),
-                            runCatching { ToolGroupStore.load() }.getOrDefault(emptyList()),
-                            Unit,
-                        ),
-                        Unit,
-                    )
-                }.getOrNull()
+            // 三项读取各自独立容错：知识库损坏不应该连带经验计数与组合列表一起显示为空。
+            val docs = withContext(Dispatchers.IO) {
+                runCatching { AgentKnowledgeRepository.snapshot() }.getOrDefault(emptyList())
             }
-            snapshot?.let { (docs, rest, _) ->
-                documents = docs
-                experienceCount = rest.first
-                groups = rest.second
+            val count = withContext(Dispatchers.IO) {
+                runCatching { AgentExperienceRepository.count() }.getOrDefault(0)
             }
+            val loadedGroups = withContext(Dispatchers.IO) {
+                runCatching { ToolGroupStore.load() }.getOrDefault(emptyList())
+            }
+            documents = docs
+            experienceCount = count
+            groups = loadedGroups
             autoExperience = runCatching { SettingsDataStore.autoExperienceEnabled() }.getOrDefault(false)
             smartRetain = runCatching { SettingsDataStore.smartRetainEnabled() }.getOrDefault(false)
             loaded = true
         }
     }
 
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(refreshTick) {
+        reload()
+        conversationChoices = withContext(Dispatchers.IO) {
+            runCatching {
+                io.github.mangi.eta.data.db.EtaDatabase.get(appContext)
+                    .conversationDao().conversationMetadataRows()
+                    .sortedByDescending { it.updatedAt }
+                    .take(30)
+                    .map { row -> row.id to row.title.ifBlank { "未命名会话" } }
+            }.getOrDefault(emptyList())
+        }
+    }
 
     fun openEditor(document: KnowledgeDocument?) {
         editingId = document?.id
@@ -182,7 +194,18 @@ internal fun AgentKnowledgeScreen(onBack: () -> Unit) {
     ) {
         if (!loaded) return@MiuixScaffoldPage
 
-        item(key = "kb-title") { SmallTitle("本地知识库（${filtered.size} 条）") }
+        item(key = "kb-title") {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SmallTitle("本地知识库（${filtered.size} 条）")
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = { refreshTick += 1 }) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = "重新读取")
+                }
+            }
+        }
         item(key = "kb-search") {
             Card {
                 TextField(
@@ -244,13 +267,31 @@ internal fun AgentKnowledgeScreen(onBack: () -> Unit) {
         }
 
         item(key = "goal-title") { SmallTitle("会话目标与子任务清单") }
+        item(key = "goal-pick") {
+            Card {
+                if (conversationChoices.isEmpty()) {
+                    BasicComponent(
+                        title = "最近会话",
+                        summary = "暂无可选会话；可手动填入会话 ID",
+                    )
+                } else {
+                    conversationChoices.take(8).forEach { (id, title) ->
+                        BasicComponent(
+                            title = title,
+                            summary = if (id == goalConversationId) "$id · 已选中" else id,
+                            onClick = { loadGoalFor(id) },
+                        )
+                    }
+                }
+            }
+        }
         item(key = "goal-id") {
             Card {
                 Column(modifier = Modifier.padding(12.dp)) {
                     TextField(
                         value = goalConversationId,
                         onValueChange = { goalConversationId = it },
-                        label = "会话 ID（在会话详情或日志里可见）",
+                        label = "或手动填会话 ID",
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -389,89 +430,6 @@ internal fun AgentKnowledgeScreen(onBack: () -> Unit) {
         }
     }
 
-    // 编辑器：Miuix / COUI 两套弹窗，内容相同。
-    val editingNow = creating || editing != null
-    val dialogTitle = if (editingId == null) "新增知识" else "编辑知识"
-    if (editingNow) {
-        when (LocalUiStyle.current) {
-            AppearanceUiStyle.COUI -> CouiConfirmDialog(
-                visible = true,
-                title = dialogTitle,
-                message = null,
-                confirmText = "保存",
-                confirmEnabled = title.isNotBlank() && content.isNotBlank() && content.length <= 12_000,
-                onConfirm = {
-                    val t = title
-                    val c = content
-                    val id = editingId
-                    val rev = editingRevision
-                    creating = false
-                    editing = null
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            runCatching {
-                                AgentKnowledgeRepository.save(
-                                    title = t, content = c, kind = kind, source = source,
-                                    tags = tags.split(',').map(String::trim).filter(String::isNotBlank).take(12),
-                                    id = id, revision = rev,
-                                )
-                            }
-                        }
-                        message = result.fold(
-                            onSuccess = { "已保存：${it.title}" },
-                            onFailure = { it.message ?: "保存失败" },
-                        )
-                        reload()
-                    }
-                },
-                onDismissRequest = { creating = false; editing = null },
-            )
-            AppearanceUiStyle.MIUIX -> WindowDialog(
-                show = true,
-                title = dialogTitle,
-                cornerRadius = DialogDefaults.CornerRadius,
-                onDismissRequest = { creating = false; editing = null },
-            ) {
-                KnowledgeEditorFields(
-                    title = title, onTitle = { title = it },
-                    content = content, onContent = { content = it },
-                    source = source, onSource = { source = it },
-                    tags = tags, onTags = { tags = it },
-                )
-                MiuixDialogActions(
-                    modifier = Modifier.padding(top = 12.dp),
-                    confirmText = "保存",
-                    confirmEnabled = title.isNotBlank() && content.isNotBlank() && content.length <= 12_000,
-                    onCancel = { creating = false; editing = null },
-                    onConfirm = {
-                        val t = title
-                        val c = content
-                        val id = editingId
-                        val rev = editingRevision
-                        creating = false
-                        editing = null
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    AgentKnowledgeRepository.save(
-                                        title = t, content = c, kind = kind, source = source,
-                                        tags = tags.split(',').map(String::trim).filter(String::isNotBlank).take(12),
-                                        id = id, revision = rev,
-                                    )
-                                }
-                            }
-                            message = result.fold(
-                                onSuccess = { "已保存：${it.title}" },
-                                onFailure = { it.message ?: "保存失败" },
-                            )
-                            reload()
-                        }
-                    },
-                )
-            }
-        }
-    }
-
     deleting?.let { document ->
         val confirm: () -> Unit = {
             scope.launch {
@@ -480,7 +438,7 @@ internal fun AgentKnowledgeScreen(onBack: () -> Unit) {
                 }
                 message = result.fold(
                     onSuccess = { if (it) "已删除：${document.title}" else "条目已不存在" },
-                    onFailure = { it.message ?: "删除失败" },
+                    onFailure = { knowledgeErrorMessage(it) },
                 )
                 deleting = null
                 reload()
@@ -513,10 +471,110 @@ internal fun AgentKnowledgeScreen(onBack: () -> Unit) {
             }
         }
     }
+
+    // 编辑器：COUI 与 Miuix 共用同一个「编辑知识」页，不再各自弹一种对话框。
+    // 为什么不做成弹窗：COUI 的通用对话框只支持单行输入，塞不下类型/标题/正文/来源/标签
+    // 五个字段；两套样式各写一套又会分叉。独立一屏两边都一样好用。
+    if (creating || editing != null) {
+        val save = {
+            val t = title
+            val c = content
+            val id = editingId
+            val rev = editingRevision
+            creating = false
+            editing = null
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        AgentKnowledgeRepository.save(
+                            title = t, content = c, kind = kind, source = source,
+                            tags = tags.split(',').map(String::trim).filter(String::isNotBlank).take(12),
+                            id = id, revision = rev,
+                        )
+                    }
+                }
+                message = result.fold(
+                    onSuccess = { "已保存：${it.title}" },
+                    onFailure = { knowledgeErrorMessage(it) },
+                )
+                reload()
+            }
+        }
+        MiuixScaffoldPage(
+            title = if (editingId == null) "新增知识" else "编辑知识",
+            onBack = { creating = false; editing = null },
+            modifier = Modifier.imePadding(),
+        ) {
+            item(key = "editor") {
+                Card {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        KnowledgeEditorFields(
+                            kind = kind, onKind = { kind = it },
+                            title = title, onTitle = { title = it },
+                            content = content, onContent = { content = it },
+                            source = source, onSource = { source = it },
+                            tags = tags, onTags = { tags = it },
+                        )
+                    }
+                }
+            }
+            item(key = "editor-actions") {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    TextButton(
+                        text = "保存",
+                        enabled = title.isNotBlank() && content.isNotBlank() && content.length <= 12_000,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { save() },
+                    )
+                    if (editingId != null) {
+                        TextButton(
+                            text = "删除此条",
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            onClick = {
+                                val current = editing
+                                creating = false
+                                editing = null
+                                if (current != null) deleting = current
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        return
+    }
+}
+
+/** 与 AgentKnowledgeStore.save 接受的 kind 取值保持一致。 */
+private val KNOWLEDGE_KINDS = listOf(
+    "fact" to "事实",
+    "procedure" to "步骤",
+    "reference" to "参考",
+)
+
+/**
+ * 仓储层异常文案统一是英文短句（同一套字符串也被工具与日志使用）。
+ * 用户直接看到的提示给中文，同时保留冲突这一必须说明的情况。
+ */
+private fun knowledgeErrorMessage(error: Throwable): String {
+    val raw = error.message.orEmpty()
+    return when {
+        raw.contains("KNOWLEDGE_CONFLICT") -> "该条目已被修改（可能是模型刚写入），请关闭后重新打开再改"
+        raw.contains("Knowledge document not found") -> "条目已不存在，可能已被删除"
+        raw.contains("title") -> "标题不能为空，且不超过 160 字符"
+        raw.contains("body") -> "正文不能为空，且不超过 12000 字符"
+        raw.contains("metadata") -> "来源或标签超限（来源 ≤250 字符，标签 ≤12 个、每个 ≤40 字符）"
+        raw.contains("limit reached") || raw.contains("capacity") -> "知识库容量已满，先删除部分条目"
+        raw.contains("exceeds") || raw.contains("too large") -> "知识库体积超限"
+        raw.isNotBlank() -> "保存失败：$raw"
+        else -> "保存失败"
+    }
 }
 
 @Composable
 private fun KnowledgeEditorFields(
+    kind: String,
+    onKind: (String) -> Unit,
     title: String,
     onTitle: (String) -> Unit,
     content: String,
@@ -533,6 +591,23 @@ private fun KnowledgeEditorFields(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        // 类型决定模型的检索偏好：fact=可复用事实，procedure=步骤，reference=参考资料。
+        Column {
+            Text(
+                text = "类型",
+                style = MiuixTheme.textStyles.footnote1,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KNOWLEDGE_KINDS.forEach { (value, label) ->
+                    TextButton(
+                        text = if (value == kind) "✓ $label" else label,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onKind(value) },
+                    )
+                }
+            }
+        }
         TextField(
             value = title,
             onValueChange = onTitle,

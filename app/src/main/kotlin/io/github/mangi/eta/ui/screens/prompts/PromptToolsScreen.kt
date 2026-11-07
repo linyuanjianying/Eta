@@ -65,8 +65,15 @@ internal fun PromptToolsScreen(onBack: () -> Unit) {
     var names by remember { mutableStateOf(emptyList<String>()) }
 
     LaunchedEffect(Unit) {
+        // 候选 = 装备目录里登记过的本地工具 + 由运行时另行拼装的工具
+        // （subagent 系列、会话历史）。后者不在 requirements 里，之前无法被加入白名单，
+        // 结果是「白名单里根本找不到它们」——对用户来说等于不可用。
         names = runCatching {
-            AgentToolRequirements.knownToolNames().sorted()
+            (AgentToolRequirements.knownToolNames() +
+                io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog.names +
+                setOf(io.github.mangi.eta.agent.model.AgentConversationToolCatalog.READ_HISTORY))
+                .filter(String::isNotBlank)
+                .sorted()
         }.getOrDefault(emptyList())
     }
 

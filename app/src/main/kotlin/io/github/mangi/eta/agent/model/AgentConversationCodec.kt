@@ -251,6 +251,26 @@ internal object AgentConversationCodec {
     fun durableMessage(message: JSONObject): AgentModelClient.ConversationMessage =
         sanitizeMessage(fromJsonObject(message))
 
+    /**
+     * 发给模型前的投影：生图消息折叠成一句引用。
+     *
+     * 为什么不能原样回放：生成图以 base64 data URL 存在 contentJson 里，原样作为用户消息发回
+     * 会让每一轮请求都带上整张图的字节（单张可达数 MB），既烧 token 又拖慢首个响应。
+     * 图片本身仍留在会话与 UI 里，模型需要看时再调 read_image 读本地路径。
+     */
+    fun forRequest(messages: List<AgentModelClient.ConversationMessage>): List<AgentModelClient.ConversationMessage> =
+        messages.map { message ->
+            if (!message.generatedImages) message
+            else message.copy(
+                content = GENERATED_IMAGE_PLACEHOLDER,
+                contentJson = "",
+                reasoningContent = "",
+            )
+        }
+
+    private const val GENERATED_IMAGE_PLACEHOLDER =
+        "[本机已生成并保存图片；图片正文不在本次请求中，需要查看时用 read_image 读取本地路径]"
+
     fun encodedSize(messages: List<AgentModelClient.ConversationMessage>): Int =
         json.encodeToString(messages).length
 

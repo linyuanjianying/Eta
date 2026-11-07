@@ -16,6 +16,14 @@ internal data class ImageGenConfig(
 ) {
     val usable: Boolean get() = enabled && baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
 
+    /**
+     * data class 的默认 toString 会带上 apiKey；只要有人把它打进日志或错误信息就会泄漏密钥。
+     * 这里固定成脱敏形式，任何路径都拿不到明文。
+     */
+    override fun toString(): String =
+        "ImageGenConfig(baseUrl=$baseUrl, model=$model, enabled=$enabled, apiKey=" +
+            (if (apiKey.isBlank()) "<empty>" else "<redacted:${apiKey.length}>") + ")"
+
     /** 拉模型列表用；与 generations 同一套 base_url 归一化。 */
     fun modelsUrl(): String {
         val trimmed = baseUrl.trim().trimEnd('/')

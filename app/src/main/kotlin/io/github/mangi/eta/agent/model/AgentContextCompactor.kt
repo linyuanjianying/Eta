@@ -31,7 +31,10 @@ internal class AgentContextCompactor(
             ?: throw failure("CONTEXT_NOT_COMPACTABLE", "没有可安全压缩的完整历史批次。")
         val protectedUser = history.getOrNull(latestUser)?.takeIf { latestUser < end }
         val source = JSONArray(history.take(end).filterNot { it === protectedUser })
-        val durable = AgentConversationCodec.transcript(source, 0, sensitiveIds)
+        // 压缩同样要折叠生图正文：摘要模型没必要读整张图的 base64，否则会白占分块预算。
+        val durable = AgentConversationCodec.forRequest(
+            AgentConversationCodec.transcript(source, 0, sensitiveIds),
+        )
         if (durable.isEmpty()) throw failure("CONTEXT_NOT_COMPACTABLE", "没有可压缩的历史内容。")
         val safe = durable.map { message ->
             val content = AgentConversationCodec.toJsonObject(message).opt("content")

@@ -21,7 +21,8 @@ internal object AgentPromptBuilder {
         executionContext: TerminalExecutionContext? = null,
     ): JSONArray {
         val messages = buildSystemMessages(config, skillContext, memoryContext, rootAvailable, roleplayContext, executionContext)
-        history.forEach { item ->
+        // 生图消息只保留一句引用：图片正文留在会话与 UI 里，不回放进每次请求（否则每轮都带整张图）。
+        AgentConversationCodec.forRequest(history).forEach { item ->
             runCatching { AgentConversationCodec.toJsonObject(item) }.getOrNull()?.let(messages::put)
         }
         messages.put(AgentConversationCodec.userMessage(prompt, images))

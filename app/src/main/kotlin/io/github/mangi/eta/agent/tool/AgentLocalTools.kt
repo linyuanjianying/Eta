@@ -426,9 +426,8 @@ internal class AgentLocalTools(
      * 结果图作为会话资产返回（persistImages），并落一份展示副本给 UI。
      */
     private fun imageGenTool(args: JSONObject): AgentModelClient.ToolResult {
-        if (!memoryToolsEnabled()) {
-            return textResult(errorResult("IMAGE_TOOL_DISABLED", "生图工具已在设置中关闭"))
-        }
+        // 生图与「记忆」是两回事：关闭记忆不该连带关掉画图，角色会话里也应该能画图。
+        // 能不能调用只由生图设置自己的开关（以及工具目录是否发布）决定。
         val settings = runBlocking { SettingsDataStore.imageGenSettings() }
         val config = ImageGenConfig.fromSettings(
             settings.baseUrl, settings.apiKey, settings.model, settings.enabled,
