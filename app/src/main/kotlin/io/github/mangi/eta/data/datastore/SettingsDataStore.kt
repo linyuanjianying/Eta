@@ -124,6 +124,14 @@ internal object SettingsDataStore {
      * 刻意不复用聊天模型的 key：生图服务常与对话服务不是同一个中转站（模型名、计费、限流都不同），
      * 共用会导致「改聊天 provider 顺手把生图打挂」，反过来也一样。
      */
+    /** 语义记忆检索：用聊天模型做相关性重排；向量检索另需 embeddings 端点。 */
+    private val SEMANTIC_MEMORY_ENABLED = booleanPreferencesKey("semantic_memory_enabled")
+    private val SEMANTIC_MEMORY_MODEL = stringPreferencesKey("semantic_memory_model")
+    private val SEMANTIC_MEMORY_USE_EMBEDDINGS = booleanPreferencesKey("semantic_memory_use_embeddings")
+    /** 结构化记忆的图扩展（关联记忆）。 */
+    private val GRAPH_MEMORY_ENABLED = booleanPreferencesKey("graph_memory_enabled")
+    /** 智能保留：把用户明确陈述的长期事实抽取成结构化记录。 */
+    private val SMART_RETAIN_ENABLED = booleanPreferencesKey("smart_retain_enabled")
     private val IMAGE_GEN_ENABLED = booleanPreferencesKey("image_gen_enabled")
     private val IMAGE_GEN_BASE_URL = stringPreferencesKey("image_gen_base_url")
     private val IMAGE_GEN_API_KEY = stringPreferencesKey("image_gen_api_key")
@@ -198,6 +206,56 @@ internal object SettingsDataStore {
         val apiKey: String = "",
         val model: String = "",
     )
+
+    suspend fun semanticMemoryEnabled(): Boolean = readFlag(SEMANTIC_MEMORY_ENABLED, false)
+
+    suspend fun setSemanticMemoryEnabled(enabled: Boolean) {
+        ensureInitialized()
+        dataStore.edit { it[SEMANTIC_MEMORY_ENABLED] = enabled }
+    }
+
+    suspend fun semanticMemoryModel(): String {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+            .map { it[SEMANTIC_MEMORY_MODEL] ?: "text-embedding-3-small" }.first()
+    }
+
+    suspend fun setSemanticMemoryModel(model: String) {
+        require(model.matches(Regex("[a-zA-Z0-9._:/\\-]{1,100}")))
+        ensureInitialized()
+        dataStore.edit { it[SEMANTIC_MEMORY_MODEL] = model }
+    }
+
+    /** 现有聊天模型是默认语义重排器；向量检索默认关闭（需要单独的 embeddings 端点）。 */
+    suspend fun semanticMemoryUseEmbeddings(): Boolean = readFlag(SEMANTIC_MEMORY_USE_EMBEDDINGS, false)
+
+    suspend fun setSemanticMemoryUseEmbeddings(value: Boolean) {
+        ensureInitialized()
+        dataStore.edit { it[SEMANTIC_MEMORY_USE_EMBEDDINGS] = value }
+    }
+
+    suspend fun graphMemoryEnabled(): Boolean = readFlag(GRAPH_MEMORY_ENABLED, false)
+
+    suspend fun setGraphMemoryEnabled(enabled: Boolean) {
+        ensureInitialized()
+        dataStore.edit { it[GRAPH_MEMORY_ENABLED] = enabled }
+    }
+
+    suspend fun smartRetainEnabled(): Boolean = readFlag(SMART_RETAIN_ENABLED, false)
+
+    suspend fun setSmartRetainEnabled(enabled: Boolean) {
+        ensureInitialized()
+        dataStore.edit { it[SMART_RETAIN_ENABLED] = enabled }
+    }
+
+    private suspend fun readFlag(key: Preferences.Key<Boolean>, default: Boolean): Boolean {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+            .map { it[key] ?: default }
+            .first()
+    }
 
     fun settingsFlow(): Flow<Settings> {
         ensureInitialized()

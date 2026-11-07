@@ -113,6 +113,12 @@ internal object AgentModelClient {
         imageGenEnabled: Boolean = false,
         /** 本地轮次上限，0 表示不设限（主 run 由模型自然结束）。子代理必须给值。 */
         maxRounds: Int = 0,
+        /**
+         * 本轮可检索的本地资料（结构化记忆 / 知识库 / 向量检索结果）。
+         *
+         * 走用户消息的尾部而不是系统提示：系统提示是请求前缀，按轮变化会让整段历史缓存失效。
+         */
+        experienceHint: String? = null,
         rewriteReply: Boolean = false,
         assistantScreenContext: String = "",
         toolFilter: ((JSONArray) -> JSONArray)? = null,
@@ -124,7 +130,8 @@ internal object AgentModelClient {
         val initialCapabilities = capabilitiesProvider()
         val messages = AgentPromptBuilder.buildInitialMessages(
             config,
-            prompt,
+            if (experienceHint.isNullOrBlank()) prompt else
+                "$prompt\n\n<local_task_experience>\n$experienceHint\n</local_task_experience>",
             images,
             history,
             skillContext,

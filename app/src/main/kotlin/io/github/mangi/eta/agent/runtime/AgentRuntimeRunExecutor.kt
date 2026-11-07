@@ -337,9 +337,35 @@ internal class AgentRuntimeRunExecutor(
                     }
                 }
             }
+            // 本轮可检索的本地资料：语义重排 +（可选）向量检索 + 图扩展；只在本轮准备一次。
+            var memoryHintPrepared = false
+            var preparedMemoryHint: String? = null
+            fun memoryHintFor(modelConfig: AgentModelClient.ModelConfig): String? {
+                if (memoryHintPrepared) return preparedMemoryHint
+                memoryHintPrepared = true
+                preparedMemoryHint = if (request.operation != AgentRuntimeWire.OP_CHAT) null else {
+                    runCatching {
+                        AgentMemoryRecall.hint(
+                            context = appContext,
+                            prompt = request.prompt,
+                            modelConfig = modelConfig,
+                            controller = runController,
+                            memoryEnabled = memoryEnabled,
+                            experienceEnabled = experienceEnabled,
+                            roleplay = roleplayContext != null,
+                        )
+                    }.onFailure { error ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_recall_failed") {
+                            "Agent memory recall unavailable: type=${error.safeLogType()}"
+                        }
+                    }.getOrNull()
+                }
+                return preparedMemoryHint
+            }
             val completedResponse = AgentModelClient.complete(
                 config = request.config,
                 imageGenEnabled = imageGenEnabled,
+                experienceHint = memoryHintFor(request.config),
                 compactionTarget = {
                     // 独立压缩模型：显式配置时用它，否则回落到主模型。
                     runBlocking {
