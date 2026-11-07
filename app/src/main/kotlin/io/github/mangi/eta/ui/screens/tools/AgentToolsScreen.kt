@@ -88,6 +88,11 @@ fun AgentToolsScreen(
                             summary = stringResource(R.string.capability_enhancements_summary),
                             onClick = { onAction(AgentToolsAction.OpenEnhancements) },
                         )
+                        CouiPreference(
+                            title = "生图（中转站）",
+                            summary = "配置 OpenAI 兼容的 /v1/images/generations，供 generate_image 工具使用",
+                            onClick = { onAction(AgentToolsAction.OpenImageGenSettings) },
+                        )
                     }
                 }
                 groups.forEach { group ->
@@ -133,6 +138,11 @@ fun AgentToolsScreen(
                             title = stringResource(R.string.capability_enhancements),
                             summary = stringResource(R.string.capability_enhancements_summary),
                             onClick = { onAction(AgentToolsAction.OpenEnhancements) },
+                        )
+                        ArrowPreference(
+                            title = "生图（中转站）",
+                            summary = "配置 OpenAI 兼容的 /v1/images/generations，供 generate_image 工具使用",
+                            onClick = { onAction(AgentToolsAction.OpenImageGenSettings) },
                         )
                     }
                 }

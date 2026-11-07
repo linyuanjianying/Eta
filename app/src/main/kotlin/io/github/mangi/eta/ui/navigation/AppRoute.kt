@@ -21,6 +21,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object WebToolsSettings : AppRoute
 
+    /** 生图中转站设置（base_url + key + 模型名）。 */
+    @Serializable
+    data object ImageGenSettings : AppRoute
+
     @Serializable
     data object Skills : AppRoute
 

@@ -93,6 +93,7 @@ import io.github.mangi.eta.ui.screens.terminal.SharedFoldersScreen
 import io.github.mangi.eta.ui.screens.terminal.TerminalEntryScreen
 import io.github.mangi.eta.ui.screens.terminal.WorkspaceScreen
 import io.github.mangi.eta.ui.screens.tools.AgentToolsScreen
+import io.github.mangi.eta.ui.screens.tools.ImageGenSettingsScreen
 import io.github.mangi.eta.ui.screens.tools.WebToolsSettingsScreen
 import io.github.mangi.eta.ui.voice.SpeechOssScreen
 import io.github.mangi.eta.ui.voice.SpeechRecognitionScreen
@@ -482,6 +483,7 @@ fun AgentAppRoot(
                             AgentToolsAction.NavigateBack -> popRoute()
                             AgentToolsAction.OpenBrowser -> openConversationBrowser()
                             AgentToolsAction.OpenWebToolsSettings -> pushRoute(AppRoute.WebToolsSettings)
+                            AgentToolsAction.OpenImageGenSettings -> pushRoute(AppRoute.ImageGenSettings)
                             AgentToolsAction.OpenEnhancements -> pushRoute(AppRoute.SystemEnhance)
                             AgentToolsAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
                         }
@@ -490,6 +492,10 @@ fun AgentAppRoot(
             }
             entry<AppRoute.WebToolsSettings>(swipeDismiss = swipeDismiss) {
                 WebToolsSettingsScreen(onBack = ::popRoute)
+            }
+            entry<AppRoute.ImageGenSettings>(swipeDismiss = swipeDismiss) {
+                // 生图配置是独立中转站，与聊天 provider 解耦；从工具页进入。
+                ImageGenSettingsScreen(onBack = ::popRoute)
             }
             entry<AppRoute.Subagents>(swipeDismiss = swipeDismiss) {
                 SubagentSettingsScreen(onBack = ::popRoute)
