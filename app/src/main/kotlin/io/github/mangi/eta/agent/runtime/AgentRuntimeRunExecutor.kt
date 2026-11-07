@@ -319,6 +319,18 @@ internal class AgentRuntimeRunExecutor(
             }
             val completedResponse = AgentModelClient.complete(
                 config = request.config,
+                compactionTarget = {
+                    // 独立压缩模型：显式配置时用它，否则回落到主模型。
+                    runBlocking {
+                        runCatching { RuntimeConfigRepository.compactionTarget(request.config) }
+                            .getOrElse {
+                                io.github.mangi.eta.agent.model.AgentCompactionTarget(
+                                    request.config,
+                                    io.github.mangi.eta.agent.model.ProviderClientFactory.getClient(request.config),
+                                )
+                            }
+                    }
+                },
                 sessionId = request.effectiveModelSessionId,
                 operationId = request.runId,
                 initialUserMessageId = uiPayload?.promptMessageId(request.runId) ?: "user-${request.runId}",

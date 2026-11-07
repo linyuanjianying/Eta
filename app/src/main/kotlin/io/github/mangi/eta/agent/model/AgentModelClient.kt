@@ -108,6 +108,7 @@ internal object AgentModelClient {
         initialUserMessageId: String = "user-$operationId",
         initialSupplementIndex: Int = 0,
         roleplayContext: RoleplayRunContext? = null,
+        compactionTarget: (() -> AgentCompactionTarget)? = null,
         rewriteReply: Boolean = false,
         assistantScreenContext: String = "",
         toolFilter: ((JSONArray) -> JSONArray)? = null,
@@ -204,6 +205,7 @@ internal object AgentModelClient {
         }
         val loop = AgentLoop(
             transcript = transcript,
+            compactionTarget = compactionTarget,
             systemCount = systemCount,
             operationId = operationId,
             onContextSnapshot = if (rewriteReply) ({ _ -> }) else onContextSnapshot,
