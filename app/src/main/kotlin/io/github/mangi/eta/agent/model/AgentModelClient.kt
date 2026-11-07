@@ -111,6 +111,8 @@ internal object AgentModelClient {
         compactionTarget: (() -> AgentCompactionTarget)? = null,
         /** 生图工具是否可用；由调用方一次性读取设置，避免每轮工具目录都去读 DataStore。 */
         imageGenEnabled: Boolean = false,
+        /** 本地轮次上限，0 表示不设限（主 run 由模型自然结束）。子代理必须给值。 */
+        maxRounds: Int = 0,
         rewriteReply: Boolean = false,
         assistantScreenContext: String = "",
         toolFilter: ((JSONArray) -> JSONArray)? = null,
@@ -237,6 +239,7 @@ internal object AgentModelClient {
             onEvent = onEvent,
             purpose = if (rewriteReply) ProviderRequestPurpose.REPLY_REWRITE else ProviderRequestPurpose.CHAT,
             roleplayContext = roleplayContext,
+            maxRounds = maxRounds,
             initialSupplementIndex = initialSupplementIndex,
             toolsForRound = ::toolsForRound,
         )

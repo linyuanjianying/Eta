@@ -39,6 +39,8 @@ internal class AgentLoop(
     private val purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
     private val roleplayContext: RoleplayRunContext? = null,
     private val compactionTarget: (() -> AgentCompactionTarget)? = null,
+    /** 本地轮次上限，0 表示不设限；子代理必须显式给值。 */
+    private val maxRounds: Int = 0,
     initialSupplementIndex: Int = 0,
 ) {
     data class Result(
@@ -98,6 +100,14 @@ internal class AgentLoop(
         var precedingTools: JSONArray? = null
 
         while (true) {
+            // 子代理没有用户盯着，必须有本地上限：目标写得含糊时它不会自己认输。
+            if (maxRounds > 0 && round > maxRounds) {
+                throw AgentModelFailure(
+                    "ROUND_LIMIT",
+                    false,
+                    "本次运行超过 $maxRounds 轮上限，已停止；请缩小任务范围后重试。",
+                )
+            }
             runController.throwIfCancelled()
             if (purpose.allowsTools) appendPendingSteeringMessage()
 

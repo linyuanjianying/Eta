@@ -10,9 +10,12 @@ import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
+import io.github.mangi.eta.agent.tool.SubAgentBudget
+import io.github.mangi.eta.agent.tool.SubAgentComplexity
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.runBlocking
 
 /**
  * 执行单次 `subagent` 工具调用：管理独立子上下文、过滤工具目录、实时镜像内部步骤，并向父 Agent 返回结构化摘要。
@@ -105,6 +108,16 @@ internal class SubagentExecutor(
             return errorResult("SUBAGENT_CONFIG_ERROR", throwable.message ?: "无法加载 Subagent 模型配置")
         }
         val modelLabel = resolvedConfig.modelDisplayName.ifBlank { resolvedConfig.model }
+        // 轮次预算：主代理可用 complexity 显式声明，未声明时按任务说明估算。
+        // 没有上限时含糊任务不会自己认输，会把轮次烧在反复试探上。
+        val complexity = runCatching {
+            SubAgentBudget.complexityOf(prompt, SubAgentComplexity.fromWire(args.optString("complexity")))
+        }.getOrDefault(SubAgentComplexity.Normal)
+        val roster = SubagentRunRegistry.register(
+            conversationKey = conversationKey,
+            subagentId = subagentId,
+            controller = childController,
+        )
         val tracker = StepTracker(
             subagentId = subagentId,
             subagentType = profile.name,
@@ -173,6 +186,20 @@ internal class SubagentExecutor(
                 sessionId = "$conversationKey-$subagentId",
                 operationId = "${toolCall.id}-$subagentId",
                 toolFilter = profile::filterTools,
+                maxRounds = complexity.rounds,
+                compactionTarget = {
+                    runBlocking {
+                        runCatching {
+                            io.github.mangi.eta.data.repository.RuntimeConfigRepository
+                                .compactionTarget(subagentConfig)
+                        }.getOrElse {
+                            io.github.mangi.eta.agent.model.AgentCompactionTarget(
+                                subagentConfig,
+                                io.github.mangi.eta.agent.model.ProviderClientFactory.getClient(subagentConfig),
+                            )
+                        }
+                    }
+                },
                 onEvent = { childEvent ->
                     val force = tracker.onChildEvent(childEvent)
                     publishSnapshot(force = force)
@@ -194,6 +221,8 @@ internal class SubagentExecutor(
                     .put("model", modelLabel)
                     .put("status", SubagentActivitySnapshot.STATUS_COMPLETED)
                     .put("tool_calls", tracker.toolCount())
+                    .put("complexity", complexity.wireValue)
+                    .put("round_budget", complexity.rounds)
                     .put("summary", response.content)
                     .put(
                         "resume_hint",
@@ -264,6 +293,7 @@ internal class SubagentExecutor(
             )
         } finally {
             controllerBinding.close()
+            SubagentRunRegistry.unregister(subagentId)
         }
     }
 

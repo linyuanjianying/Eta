@@ -89,6 +89,17 @@ internal object AgentSubagentToolCatalog {
                     ),
             )
             .put(
+                "complexity",
+                JSONObject()
+                    .put("type", "string")
+                    .put("enum", JSONArray(listOf("simple", "normal", "complex")))
+                    .put(
+                        "description",
+                        "Workload hint: simple/normal/complex → 10/20/40 rounds. Estimate honestly; " +
+                            "multi-file or multi-check tasks need complex, one-line lookups simple.",
+                    ),
+            )
+            .put(
                 "resume",
                 JSONObject()
                     .put("type", "string")
