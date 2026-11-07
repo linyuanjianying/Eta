@@ -32,6 +32,7 @@ internal object SettingsDataStore {
     private val SPEECH_SETTINGS = stringPreferencesKey("speech_settings_v1")
     private val WEB_TOOLS_SETTINGS = stringPreferencesKey("web_tools_settings_v1")
     private val SUBAGENT_SETTINGS = stringPreferencesKey("subagent_settings_v1")
+    private val COMPACTION_SETTINGS = stringPreferencesKey("compaction_settings_v1")
     private val speechJson = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -91,6 +92,22 @@ internal object SettingsDataStore {
     suspend fun setSubagentSettings(settings: SubagentSettings) {
         ensureInitialized()
         dataStore.edit { it[SUBAGENT_SETTINGS] = speechJson.encodeToString(settings) }
+    }
+
+    fun compactionSettingsFlow(): Flow<io.github.mangi.eta.data.model.CompactionSettings> {
+        ensureInitialized()
+        return dataStore.data.map { prefs ->
+            prefs[COMPACTION_SETTINGS]?.let {
+                speechJson.decodeFromString<io.github.mangi.eta.data.model.CompactionSettings>(it)
+            } ?: io.github.mangi.eta.data.model.CompactionSettings()
+        }
+    }
+
+    suspend fun compactionSettings() = compactionSettingsFlow().first()
+
+    suspend fun setCompactionSettings(settings: io.github.mangi.eta.data.model.CompactionSettings) {
+        ensureInitialized()
+        dataStore.edit { it[COMPACTION_SETTINGS] = speechJson.encodeToString(settings) }
     }
 
     private const val STORE_NAME = "eta_settings"

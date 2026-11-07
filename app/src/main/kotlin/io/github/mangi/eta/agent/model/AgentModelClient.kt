@@ -315,6 +315,12 @@ internal object AgentModelClient {
         val model: String,
         val modelDisplayName: String = "",
         val contextWindow: Int? = null,
+        /**
+         * 窗口的目录/服务商声明值（如 models.dev limit.context）。
+         * 不作为硬上限——`contextWindow` 仍是唯一可信上限（只认人工覆盖）；
+         * 这里只用于提前触发压缩：声明值可能过期，宁早勿晚。
+         */
+        val declaredContextWindow: Int? = null,
         val systemPrompt: String,
         val anthropicVersion: String = AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
         val openAiEndpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,
@@ -351,6 +357,10 @@ internal object AgentModelClient {
         /** 未知窗口不阻断对话：只关闭依赖窗口的自动压缩，手动压缩与服务商溢出错误照常可用。 */
         val knownContextWindow: Int?
             get() = contextWindow?.takeIf { it > 0 }
+
+        /** 签名工具上下文是否仍有未配对的 tool 结果（此时压缩会破坏会话结构）。 */
+        fun signedToolRoundLocked(messages: JSONArray): Boolean =
+            SignedToolContext.hasPendingResponse(messages)
     }
 
     @Serializable
