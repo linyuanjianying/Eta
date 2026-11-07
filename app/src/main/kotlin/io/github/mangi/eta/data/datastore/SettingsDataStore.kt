@@ -118,6 +118,16 @@ internal object SettingsDataStore {
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
     /** 独立开关：自动记录任务经验（只留工具名与错误码，不含参数、输出与聊天正文）。 */
     private val AUTO_EXPERIENCE_ENABLED = booleanPreferencesKey("auto_experience_enabled")
+    /**
+     * 生图（OpenAI 兼容中转站）。
+     *
+     * 刻意不复用聊天模型的 key：生图服务常与对话服务不是同一个中转站（模型名、计费、限流都不同），
+     * 共用会导致「改聊天 provider 顺手把生图打挂」，反过来也一样。
+     */
+    private val IMAGE_GEN_ENABLED = booleanPreferencesKey("image_gen_enabled")
+    private val IMAGE_GEN_BASE_URL = stringPreferencesKey("image_gen_base_url")
+    private val IMAGE_GEN_API_KEY = stringPreferencesKey("image_gen_api_key")
+    private val IMAGE_GEN_MODEL = stringPreferencesKey("image_gen_model")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_UI_STYLE = stringPreferencesKey("appearance_ui_style")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
@@ -157,6 +167,37 @@ internal object SettingsDataStore {
         ensureInitialized()
         dataStore.edit { it[AUTO_EXPERIENCE_ENABLED] = enabled }
     }
+
+    /** 生图配置快照；未配置时 enabled=false，工具不会出现在工具的 schema 列表里。 */
+    suspend fun imageGenSettings(): ImageGenSettings {
+        ensureInitialized()
+        val prefs = dataStore.data
+            .catch { cause -> if (cause is IOException) emptyPreferences() else throw cause }
+            .first()
+        return ImageGenSettings(
+            enabled = prefs[IMAGE_GEN_ENABLED] ?: false,
+            baseUrl = prefs[IMAGE_GEN_BASE_URL] ?: "",
+            apiKey = prefs[IMAGE_GEN_API_KEY] ?: "",
+            model = prefs[IMAGE_GEN_MODEL] ?: "",
+        )
+    }
+
+    suspend fun setImageGenSettings(settings: ImageGenSettings) {
+        ensureInitialized()
+        dataStore.edit { prefs ->
+            prefs[IMAGE_GEN_ENABLED] = settings.enabled
+            prefs[IMAGE_GEN_BASE_URL] = settings.baseUrl
+            prefs[IMAGE_GEN_API_KEY] = settings.apiKey
+            prefs[IMAGE_GEN_MODEL] = settings.model
+        }
+    }
+
+    data class ImageGenSettings(
+        val enabled: Boolean = false,
+        val baseUrl: String = "",
+        val apiKey: String = "",
+        val model: String = "",
+    )
 
     fun settingsFlow(): Flow<Settings> {
         ensureInitialized()

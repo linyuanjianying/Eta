@@ -267,6 +267,8 @@ internal class AgentRuntimeRunExecutor(
             val experienceEnabled = memoryEnabled && roleplayContext == null &&
                 request.operation == AgentRuntimeWire.OP_CHAT
             val experienceTrace = AgentExperienceTrace()
+            val imageGenEnabled = memoryEnabled && roleplayContext == null &&
+                runBlocking { SettingsDataStore.imageGenSettings().enabled }
             /** 子任务清单：长任务的外部进度，跨轮次与上下文压缩都不会丢。 */
             val taskTool = conversationId?.takeIf { it.isNotBlank() }?.let { id ->
                 AgentTaskTool(AgentTaskPlanStore(appContext.filesDir), id)
@@ -337,6 +339,7 @@ internal class AgentRuntimeRunExecutor(
             }
             val completedResponse = AgentModelClient.complete(
                 config = request.config,
+                imageGenEnabled = imageGenEnabled,
                 compactionTarget = {
                     // 独立压缩模型：显式配置时用它，否则回落到主模型。
                     runBlocking {

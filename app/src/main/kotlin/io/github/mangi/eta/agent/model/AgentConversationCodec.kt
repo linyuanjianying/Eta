@@ -12,6 +12,9 @@ import org.json.JSONTokener
 /** Provider JSON 与 Eta 稳定会话 DTO 之间的转换；脱敏不改变普通文本与工具批次。 */
 internal object AgentConversationCodec {
 
+    /** 生图结果消息的标记：转录时保留其图片，不被 sanitize 剥掉。 */
+    const val GENERATED_IMAGE_FLAG = "_eta_generated"
+
     private const val IMAGE_OMITTED_TEXT = "[图片观察已在当前回合使用，未写入持久会话]"
     private const val SENSITIVE_TOOL_OMITTED_TEXT =
         "[敏感工具参数与原始结果仅供当前回合使用，未写入持久会话]"
@@ -21,7 +24,8 @@ internal object AgentConversationCodec {
     }
 
     fun encodeTranscriptForStorage(messages: List<AgentModelClient.ConversationMessage>): String =
-        json.encodeToString(messages.map(::sanitizeMessage))
+        // 生图消息是会话资产，落库时同样保住图片；其余照旧清理以省存储。
+        json.encodeToString(messages.map { if (it.generatedImages) it else sanitizeMessage(it) })
 
     fun encodeConversationCheckpoint(messages: List<AgentModelClient.ConversationMessage>): String =
         encodeTranscriptForStorage(messages)
@@ -82,6 +86,7 @@ internal object AgentConversationCodec {
             toolCallId = message.optString("tool_call_id"),
             reasoningContent = message.optString("reasoning_content"),
             toolCallsJson = message.optJSONArray("tool_calls")?.toString().orEmpty(),
+            generatedImages = message.optBoolean(GENERATED_IMAGE_FLAG),
         )
     }
 
@@ -209,10 +214,13 @@ internal object AgentConversationCodec {
         }
         return buildList {
             for (index in startIndex until messages.length()) {
-                messages.optJSONObject(index)
-                    ?.let { redactSensitiveToolData(it, redactedIds) }
+                val raw = messages.optJSONObject(index) ?: continue
+                // 生成图是会话资产（与用户附件同级），清理阶段必须保住 image_url：
+                // sanitizeMessage 会剥离全部图片以省存储，剥完 UI 就没有图可渲染了。
+                val keepImages = raw.optBoolean(GENERATED_IMAGE_FLAG)
+                raw.let { redactSensitiveToolData(it, redactedIds) }
                     ?.let(::fromJsonObject)
-                    ?.let(::sanitizeMessage)
+                    ?.let { if (keepImages) it else sanitizeMessage(it) }
                     ?.let(::add)
             }
         }
@@ -249,7 +257,8 @@ internal object AgentConversationCodec {
     private fun sanitizeMessage(
         message: AgentModelClient.ConversationMessage,
     ): AgentModelClient.ConversationMessage =
-        message.copy(
+        if (message.generatedImages) message
+        else message.copy(
             role = message.role,
             content = message.content,
             contentJson = sanitizeContentJson(message.contentJson),

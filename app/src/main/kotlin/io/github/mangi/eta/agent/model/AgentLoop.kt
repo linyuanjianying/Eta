@@ -56,6 +56,10 @@ internal class AgentLoop(
     private val accumulatedReasoning = StringBuilder()
     private val sensitiveToolCallIds = linkedSetOf<String>()
     private val toolBatchLock = Any()
+    private companion object {
+        const val GENERATED_IMAGE_ID_PREFIX = "generated-image-"
+    }
+
     private var pendingToolImageMessage: JSONObject? = null
     private val context = AgentContextSession(
         config, messages, systemCount, operationId, provider, runController,
@@ -473,6 +477,7 @@ internal class AgentLoop(
                 imageBytes = result.images.sumOf { it.bytes },
                 success = traceFormatter.isSuccessResult(result),
                 command = result.command,
+                imagePaths = if (result.sensitive) emptyList() else result.displayImagePaths,
             )
         )
     }
@@ -487,10 +492,42 @@ internal class AgentLoop(
             return
         }
 
+        // 生图结果是会话资产：不标记 _eta_observation，让它随消息落盘并在对话里显示。
+        val persistent = imageOutcomes.filter { it.result.persistImages }
+        val transient = imageOutcomes.filterNot { it.result.persistImages }
+
+        if (persistent.isNotEmpty()) {
+            val persistImages = persistent.flatMap { it.result.images }
+            val persistNames = persistent.map { it.call.name }.distinct().joinToString(", ")
+            // 必须走 appendMessage：它同时写 messages（供 provider）与 transcript（供 UI）。
+            // 只写 messages 的话 publishTranscript 读不到，图片永远不会出现在会话里。
+            // 三个标记缺一不可：
+            // _eta_generated  → 落库时跳过 sanitize（否则图被剥成占位文字）
+            // _eta_message_id → UI 侧按前缀识别成可见图片消息
+            // generatedImages → 上面两者的 DTO 载体，序列化往返后仍存活
+            val generatedMessage = AgentConversationCodec.userMessage(
+                text = "Generated image(s) by tool(s): $persistNames.",
+                images = persistImages,
+            ).put(AgentConversationCodec.GENERATED_IMAGE_FLAG, true)
+                .put("_eta_message_id", "$GENERATED_IMAGE_ID_PREFIX${System.currentTimeMillis()}")
+            appendMessage(generatedMessage)
+            persistent.forEach { outcome ->
+                onEvent(
+                    AgentEvent.ToolImagesAttached(
+                        round = round,
+                        toolName = outcome.call.name,
+                        imageCount = outcome.result.images.size,
+                        imageBytes = outcome.result.images.sumOf { it.bytes },
+                    )
+                )
+            }
+        }
+        if (transient.isEmpty()) return
+
         // 工具截图是瞬时观察，不是会话资产。下一次思考消费后立即删除。
         discardPendingToolImageMessage()
-        val images = imageOutcomes.flatMap { outcome -> outcome.result.images }
-        val toolNames = imageOutcomes
+        val images = transient.flatMap { outcome -> outcome.result.images }
+        val toolNames = transient
             .map { outcome -> outcome.call.name }
             .distinct()
             .joinToString(", ")
@@ -499,7 +536,7 @@ internal class AgentLoop(
             images = images,
         ).put("_eta_observation", true).also(messages::put)
 
-        imageOutcomes.forEach { outcome ->
+        transient.forEach { outcome ->
             onEvent(
                 AgentEvent.ToolImagesAttached(
                     round = round,

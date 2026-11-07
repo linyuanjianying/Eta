@@ -15,6 +15,9 @@ import io.github.mangi.eta.agent.device.DeviceControlUnavailableException
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.device.RootShellDeviceController
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
+import io.github.mangi.eta.agent.image.AgentImageGenToolCatalog
+import io.github.mangi.eta.agent.image.ImageGenConfig
+import io.github.mangi.eta.agent.media.ToolDisplayImageStore
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.device.LocalNetworkPermission
@@ -55,6 +58,7 @@ import io.github.mangi.eta.agent.terminal.SharedFolderMounts
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AgentLogger
 import io.github.mangi.eta.core.HookSupport
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentKnowledgeRepository
 import io.github.mangi.eta.data.repository.AgentMemoryException
 import io.github.mangi.eta.data.repository.AgentMemoryMutation
@@ -121,6 +125,7 @@ internal class AgentLocalTools(
     private var activeDisplayId: Int = Display.DEFAULT_DISPLAY
     private val browserSessionRef = lazy { browserSession ?: AgentBrowserSession() }
     private val deviceController = RootShellDeviceController(logger, screenshotExcludedPackages, rootAvailable)
+    private val toolImageStore = ToolDisplayImageStore(context)
     private val rootCommandExecutor = BoundedRootCommandExecutor(logger, rootAvailable = rootAvailable)
     private val structuredDeviceTools = AgentStructuredDeviceTools(
         context = context,
@@ -290,6 +295,7 @@ internal class AgentLocalTools(
                 in AgentFileToolCatalog.names -> textResult(terminalTool { terminalController.fileTool(toolCall.name, args) })
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
+                AgentImageGenToolCatalog.GENERATE_IMAGE -> imageGenTool(args)
                 "knowledge_search" -> textResult(knowledgeSearch(args))
                 "knowledge_get" -> textResult(knowledgeGet(args))
                 "knowledge_save" -> textResult(knowledgeSave(args))
@@ -413,6 +419,25 @@ internal class AgentLocalTools(
             .toString()
     } catch (failure: AgentMemoryException) {
         errorResult(failure.code, failure.message ?: "记忆读取失败")
+    }
+
+    /**
+     * 生图：配置从设置里读，未启用时工具 schema 本身就不会出现。
+     * 结果图作为会话资产返回（persistImages），并落一份展示副本给 UI。
+     */
+    private fun imageGenTool(args: JSONObject): AgentModelClient.ToolResult {
+        if (!memoryToolsEnabled()) {
+            return textResult(errorResult("IMAGE_TOOL_DISABLED", "生图工具已在设置中关闭"))
+        }
+        val settings = runBlocking { SettingsDataStore.imageGenSettings() }
+        val config = ImageGenConfig.fromSettings(
+            settings.baseUrl, settings.apiKey, settings.model, settings.enabled,
+        )
+        val result = AgentImageGenToolCatalog.execute(context, config, args.toString())
+        val normalized = if (result.displayImagePaths.isEmpty() && result.images.isNotEmpty()) {
+            result.copy(displayImagePaths = toolImageStore.materialize(result.images))
+        } else result
+        return normalized
     }
 
     /** 本地知识库检索：混合词法相关度，结果带 source/时间/revision。 */

@@ -109,6 +109,8 @@ internal object AgentModelClient {
         initialSupplementIndex: Int = 0,
         roleplayContext: RoleplayRunContext? = null,
         compactionTarget: (() -> AgentCompactionTarget)? = null,
+        /** 生图工具是否可用；由调用方一次性读取设置，避免每轮工具目录都去读 DataStore。 */
+        imageGenEnabled: Boolean = false,
         rewriteReply: Boolean = false,
         assistantScreenContext: String = "",
         toolFilter: ((JSONArray) -> JSONArray)? = null,
@@ -162,6 +164,7 @@ internal object AgentModelClient {
                 memoryWritable = roleplayContext == null,
                 capabilities = capabilities,
                 localWebSearch = !config.usesHostedWebSearch,
+                imageGenEnabled = imageGenEnabled,
             )
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
@@ -377,6 +380,8 @@ internal object AgentModelClient {
         val compactedUserTurns: Int = 0,
         val summaryThroughUserTurn: Int = 0,
         val messageId: String = "",
+        /** 生图结果消息：转录与落库时保住图片，不被 sanitize 剥成占位文字。 */
+        val generatedImages: Boolean = false,
     )
 
     fun interface ToolExecutor {
@@ -399,6 +404,13 @@ internal object AgentModelClient {
          */
         val sensitive: Boolean = false,
         val command: String? = null,
+        /**
+         * 工具图片是否作为会话资产保留在对话里（生图），而不是当前回合用完即弃的瞬时观察（截图）。
+         * 持久图会随消息落库并在 UI 渲染；瞬时图只在本次思考可见。
+         */
+        val persistImages: Boolean = false,
+        /** 已落盘的展示副本路径；只给 UI 用，不进入模型请求。 */
+        val displayImagePaths: List<String> = emptyList(),
     )
 
     /** 图片引用：入口侧可为本地 URI/路径，进入模型协议前必须解析为远程 URL 或 data URL。 */

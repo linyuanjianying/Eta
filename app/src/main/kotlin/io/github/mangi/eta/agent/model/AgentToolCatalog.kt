@@ -17,6 +17,7 @@ internal object AgentToolCatalog {
         memoryWritable: Boolean = true,
         capabilities: AgentToolCapabilities = AgentToolCapabilities(rootAvailable = true),
         localWebSearch: Boolean = true,
+        imageGenEnabled: Boolean = false,
     ): JSONArray =
         capabilities.project(JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
@@ -41,6 +42,7 @@ internal object AgentToolCatalog {
                 AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
                 AgentKnowledgeToolCatalog.appendTo(tools, writable = memoryWritable)
             }
+            io.github.mangi.eta.agent.image.AgentImageGenToolCatalog.appendSchemas(tools, imageGenEnabled)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)
