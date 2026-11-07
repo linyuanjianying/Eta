@@ -25,6 +25,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object ImageGenSettings : AppRoute
 
+    /** 工具白名单与组合。 */
+    @Serializable
+    data object ToolBoundaries : AppRoute
+
     @Serializable
     data object Skills : AppRoute
 

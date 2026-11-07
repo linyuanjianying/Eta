@@ -93,6 +93,11 @@ fun AgentToolsScreen(
                             summary = "配置 OpenAI 兼容的 /v1/images/generations，供 generate_image 工具使用",
                             onClick = { onAction(AgentToolsAction.OpenImageGenSettings) },
                         )
+                        CouiPreference(
+                            title = "工具边界与组合",
+                            summary = "白名单只放行指定工具；保存常用组合以便一键套用",
+                            onClick = { onAction(AgentToolsAction.OpenToolBoundaries) },
+                        )
                     }
                 }
                 groups.forEach { group ->
@@ -143,6 +148,11 @@ fun AgentToolsScreen(
                             title = "生图（中转站）",
                             summary = "配置 OpenAI 兼容的 /v1/images/generations，供 generate_image 工具使用",
                             onClick = { onAction(AgentToolsAction.OpenImageGenSettings) },
+                        )
+                        ArrowPreference(
+                            title = "工具边界与组合",
+                            summary = "白名单只放行指定工具；保存常用组合以便一键套用",
+                            onClick = { onAction(AgentToolsAction.OpenToolBoundaries) },
                         )
                     }
                 }

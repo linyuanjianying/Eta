@@ -6,6 +6,7 @@ import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.agent.prompt.AgentToolPolicyStore
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
@@ -180,7 +181,14 @@ internal object AgentModelClient {
             }
             return toolFilter?.invoke(tools) ?: tools
         }
-        val tools = toolsFor(initialCapabilities)
+        // 用户设置的工具白名单：请求侧先过滤 tools 数组，执行侧再用 allows() 兜底拒绝，
+        // 避免模型从历史或复述里拼出未授权工具调用。
+        val toolPolicy = AgentToolPolicyStore.load()
+        fun publishedToolsFor(capabilities: AgentToolCapabilities): JSONArray {
+            val visible = toolFilter?.invoke(toolsFor(capabilities)) ?: toolsFor(capabilities)
+            return toolPolicy.filterTools(visible)
+        }
+        val tools = publishedToolsFor(initialCapabilities)
         onEvent(
             AgentEvent.RunStarted(
                 initialImages = images.size,
@@ -203,11 +211,11 @@ internal object AgentModelClient {
                     messages.put(index, systemMessages.getJSONObject(index))
                 }
                 promptRootAvailable = capabilities.rootAvailable
-                publishedTools = toolsFor(capabilities)
+                publishedTools = publishedToolsFor(capabilities)
                 return publishedTools
             }
             val published = toolNames(publishedTools)
-            val added = toolsFor(capabilities).let { fresh ->
+            val added = publishedToolsFor(capabilities).let { fresh ->
                 (0 until fresh.length()).map(fresh::getJSONObject).filter { toolName(it) !in published }
             }
             if (added.isNotEmpty()) {
@@ -226,6 +234,7 @@ internal object AgentModelClient {
             config = config,
             messages = messages,
             tools = tools,
+            toolPolicy = toolPolicy,
             provider = provider,
             // 目录在运行内只增不减，可见不再等于可用：执行前用同一规则复核，
             // 中途失去的能力返回与目录过滤一致的错误码，而不是让底层接口给出含糊的失败。

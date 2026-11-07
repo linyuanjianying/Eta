@@ -107,6 +107,9 @@ internal object AgentToolRequirements {
 
     fun find(name: String): LocalToolRequirement? = definitions[PersonalSearchTools.canonical(name)]
 
+    /** 装备目录里登记过的全部工具名；界面用它列出可加入白名单的候选项。 */
+    fun knownToolNames(): Set<String> = definitions.keys
+
     fun rootRequirement(name: String): RootRequirement =
         requireNotNull(find(name)) { "Missing tool requirements: $name" }.rootRequirement
 

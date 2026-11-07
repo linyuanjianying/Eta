@@ -39,6 +39,9 @@ internal class AgentLoop(
     private val purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
     private val roleplayContext: RoleplayRunContext? = null,
     private val compactionTarget: (() -> AgentCompactionTarget)? = null,
+    /** 工具白名单：执行前再兜底一次，模型无法靠历史或复述绕过。 */
+    private val toolPolicy: io.github.mangi.eta.agent.prompt.AgentToolPolicy =
+        io.github.mangi.eta.agent.prompt.AgentToolPolicy(),
     /** 本地轮次上限，0 表示不设限；子代理必须显式给值。 */
     private val maxRounds: Int = 0,
     initialSupplementIndex: Int = 0,
@@ -411,6 +414,14 @@ internal class AgentLoop(
                 toolCall = toolCall,
                 code = "TOOL_NOT_AVAILABLE",
                 message = "工具未在本轮能力目录中提供，请使用当前可用工具",
+            )
+        }
+        if (!toolPolicy.allows(toolCall.name)) {
+            return rejectedToolOutcome(
+                round = round,
+                toolCall = toolCall,
+                code = "TOOL_NOT_ALLOWED_BY_POLICY",
+                message = "该工具不在本次工具白名单中，未执行",
             )
         }
         val roundCall = if (toolCall.round == round) toolCall else toolCall.copy(round = round)
