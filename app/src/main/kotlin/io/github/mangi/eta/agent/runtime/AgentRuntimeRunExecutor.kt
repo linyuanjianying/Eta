@@ -38,7 +38,9 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.agent.memory.AgentRetainExtractor
 import io.github.mangi.eta.data.repository.AgentExperienceRepository
+import io.github.mangi.eta.data.repository.AgentRetainedMemoryRepository
 import io.github.mangi.eta.data.repository.AgentKnowledgeRepository
 import io.github.mangi.eta.data.repository.AgentTaskPlanStore
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
@@ -426,6 +428,27 @@ internal class AgentRuntimeRunExecutor(
                 }.onFailure {
                     AndroidAgentLogger.warnThrottled("experience_record_failed") {
                         "Task experience capture unavailable: type=${it.safeLogType()}"
+                    }
+                }
+            }
+            // 智能保留：只抽取用户明确陈述的长期事实；抽取失败不影响本轮结果。
+            if (experienceEnabled && request.operation == AgentRuntimeWire.OP_CHAT &&
+                runBlocking { SettingsDataStore.smartRetainEnabled() }
+            ) {
+                runCatching {
+                    val existing = AgentRetainedMemoryRepository.active(35)
+                    val extracted = AgentRetainExtractor().extract(
+                        request.config, request.prompt, existing, runController,
+                    )
+                    if (extracted.isNotEmpty() && !runController.isCancelled) {
+                        AgentRetainedMemoryRepository.retain(
+                            extracted, AgentRetainExtractor.sourceHash(request.runId),
+                        )
+                    }
+                }.onFailure { error ->
+                    if (error is AgentRunCancelledException) throw error
+                    AndroidAgentLogger.warnThrottled("smart_retain_failed") {
+                        "Smart retain unavailable: type=${error.safeLogType()}"
                     }
                 }
             }
