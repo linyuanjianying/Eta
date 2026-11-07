@@ -71,7 +71,12 @@ internal fun PromptToolsScreen(onBack: () -> Unit) {
         names = runCatching {
             (AgentToolRequirements.knownToolNames() +
                 io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog.names +
-                setOf(io.github.mangi.eta.agent.model.AgentConversationToolCatalog.READ_HISTORY))
+                // 由运行时按条件发布、不进装备目录的工具：会话历史、子任务清单、生图。
+                setOf(
+                    io.github.mangi.eta.agent.model.AgentConversationToolCatalog.READ_HISTORY,
+                    io.github.mangi.eta.agent.tool.AgentTaskTool.TASK_WRITE,
+                    io.github.mangi.eta.agent.image.AgentImageGenToolCatalog.GENERATE_IMAGE,
+                ))
                 .filter(String::isNotBlank)
                 .sorted()
         }.getOrDefault(emptyList())
