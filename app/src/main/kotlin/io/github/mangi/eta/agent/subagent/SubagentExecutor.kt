@@ -10,8 +10,6 @@ import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
-import io.github.mangi.eta.agent.tool.SubAgentBudget
-import io.github.mangi.eta.agent.tool.SubAgentComplexity
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject
@@ -109,11 +107,6 @@ internal class SubagentExecutor(
             return errorResult("SUBAGENT_CONFIG_ERROR", throwable.message ?: "无法加载 Subagent 模型配置")
         }
         val modelLabel = resolvedConfig.modelDisplayName.ifBlank { resolvedConfig.model }
-        // 轮次预算：主代理可用 complexity 显式声明，未声明时按任务说明估算。
-        // 没有上限时含糊任务不会自己认输，会把轮次烧在反复试探上。
-        val complexity = runCatching {
-            SubAgentBudget.complexityOf(prompt, SubAgentComplexity.fromWire(args.optString("complexity")))
-        }.getOrDefault(SubAgentComplexity.Normal)
         val roster = SubagentRunRegistry.register(
             conversationKey = conversationKey,
             subagentId = subagentId,
@@ -188,7 +181,6 @@ internal class SubagentExecutor(
                 sessionId = "$conversationKey-$subagentId",
                 operationId = "${toolCall.id}-$subagentId",
                 toolFilter = profile::filterTools,
-                maxRounds = complexity.rounds,
                 compactionTarget = {
                     runBlocking {
                         runCatching {
@@ -223,8 +215,6 @@ internal class SubagentExecutor(
                     .put("model", modelLabel)
                     .put("status", SubagentActivitySnapshot.STATUS_COMPLETED)
                     .put("tool_calls", tracker.toolCount())
-                    .put("complexity", complexity.wireValue)
-                    .put("round_budget", complexity.rounds)
                     .put("summary", response.content)
                     .put(
                         "resume_hint",

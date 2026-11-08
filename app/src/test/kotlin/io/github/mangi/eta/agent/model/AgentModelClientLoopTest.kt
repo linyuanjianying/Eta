@@ -19,6 +19,37 @@ import org.junit.Test
 
 class AgentModelClientLoopTest {
     @Test
+    fun subagentRunCanPassFormerRoundLimitsAndRetainsEveryToolResult() {
+        val executed = mutableListOf<String>()
+        val responses = (1..45).map { round ->
+            { _: ProviderRequest, _: AgentRunController ->
+                assistant(finishReason = "tool_calls", toolCalls = listOf(
+                    toolCall("step-$round", "get_current_context", "{}"),
+                ))
+            }
+        } + listOf({ request: ProviderRequest, _: AgentRunController ->
+            val toolResults = (0 until request.messages.length())
+                .map(request.messages::getJSONObject).filter { it.optString("role") == "tool" }
+            assertEquals(45, toolResults.size)
+            assertEquals((1..45).map { "step-$it" }, toolResults.map { it.getString("tool_call_id") })
+            assistant(content = "全部完成", finishReason = "stop")
+        })
+        val provider = ScriptedProvider(responses)
+        val result = AgentModelClient.complete(
+            modelConfig().copy(subagentTools = false), "完成45个步骤",
+            AgentModelClient.ToolExecutor { call ->
+                executed += call.id
+                AgentModelClient.ToolResult("result-${call.id}")
+            },
+            provider = provider,
+        )
+        assertEquals("全部完成", result.content)
+        assertEquals((1..45).map { "step-$it" }, executed)
+        assertEquals(46, provider.requests.size)
+        assertEquals(45, result.transcript.count { it.role == "tool" })
+    }
+
+    @Test
     fun rootProbeStatesKeepThePrefixStableUntilGrantActuallyChanges() {
         var root = RootAccessState(isChecking = true)
         val calls = mutableListOf<String>()

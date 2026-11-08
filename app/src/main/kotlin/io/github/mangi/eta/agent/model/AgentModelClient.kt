@@ -115,8 +115,6 @@ internal object AgentModelClient {
         imageGenEnabled: Boolean = false,
         /** 用户自备的作战协议（纯文本数据）；由 Runtime 每轮准备阶段读取一次，为空即不注入。 */
         combatProtocol: AgentCombatProtocolSnapshot = AgentCombatProtocolSnapshot.EMPTY,
-        /** 本地轮次上限，0 表示不设限（主 run 由模型自然结束）。子代理必须给值。 */
-        maxRounds: Int = 0,
         /**
          * 本轮可检索的本地资料（结构化记忆 / 知识库 / 向量检索结果）。
          *
@@ -261,7 +259,6 @@ internal object AgentModelClient {
             onEvent = onEvent,
             purpose = if (rewriteReply) ProviderRequestPurpose.REPLY_REWRITE else ProviderRequestPurpose.CHAT,
             roleplayContext = roleplayContext,
-            maxRounds = maxRounds,
             initialSupplementIndex = initialSupplementIndex,
             toolsForRound = ::toolsForRound,
         )
