@@ -1039,6 +1039,7 @@ internal class AgentAppState(
         if (!SettingsDataStore.reuseLastRoleplayEnabled()) return@runCatching null
         val stored = RoleplayBindingCodec.decode(SettingsDataStore.lastRoleplayBindingJson())
             ?: return@runCatching null
+        CharacterRepository.initialize(appContext)
         stored.withLatestCharacter(CharacterRepository.storedCharacter(stored.characterId))
     }.getOrNull()
 
@@ -1046,6 +1047,7 @@ internal class AgentAppState(
     private fun rememberLastRoleplay(binding: RoleplayBinding) {
         scope.launch(Dispatchers.IO) {
             val stillExists = runCatching {
+                CharacterRepository.initialize(appContext)
                 CharacterRepository.storedCharacter(binding.characterId)?.takeIf { !it.archived } != null
             }.getOrDefault(false)
             runCatching {
