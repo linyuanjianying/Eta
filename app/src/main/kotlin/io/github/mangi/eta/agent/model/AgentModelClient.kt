@@ -178,6 +178,7 @@ internal object AgentModelClient {
                 capabilities = capabilities,
                 localWebSearch = !config.usesHostedWebSearch,
                 imageGenEnabled = imageGenEnabled,
+                disabledTools = Prefs.disabledTools(),
             )
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
