@@ -52,7 +52,7 @@ class OpenCodeFreeModelCatalogTest {
         }
     }
 
-    @Test fun directZenAndLocalGatewayResolveToOpenCodeWhenConfigured() {
+    @Test fun directZenResolvesToOpenCodeWhenConfigured() {
         val builtin = BuiltinProviders.providerById(BuiltinProviders.OPENCODE_ID)!!
         assertEquals(ProviderSourceTypes.OPENCODE, ProviderSourceRegistry.resolve(builtin))
         assertTrue(OpenCodeFreeModelCatalog.identifyOfficialOpenCodeUrl(builtin.baseUrl))
@@ -71,11 +71,8 @@ class OpenCodeFreeModelCatalogTest {
         assertTrue(OpenCodeFreeModelCatalog.parseFreeModelIds(json).isEmpty())
     }
 
-    @Test fun officialOpenCodeUrlIsIdentifiedAndCustomGatewaysAreNot() {
-        // 原 builtinZenCatalogDoesNotWaitForEmbeddedGatewayReadiness /
-        // customOpenCodeGatewayDoesNotSilentlyRedirectToOfficialZen 依赖的
-        // RemoteModelFetcher.shouldReadOfficialZenCatalog 与 catalogProvider 已在上游移除，
-        // 这里保留仍存在的那部分契约：官方 Zen URL 可识别、第三方 URL 不被误判。
+    @Test fun officialOpenCodeUrlIsIdentifiedAndCustomEndpointsAreNot() {
+        // 免费目录只对官方 Zen 端点生效；第三方 OpenAI 兼容端点不得被误判为官方。
         val builtin = BuiltinProviders.providerById(BuiltinProviders.OPENCODE_ID)!!
         assertEquals("https://opencode.ai/zen/v1", builtin.baseUrl)
         assertTrue(OpenCodeFreeModelCatalog.identifyOfficialOpenCodeUrl(builtin.baseUrl))

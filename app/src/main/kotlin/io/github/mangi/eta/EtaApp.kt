@@ -21,7 +21,6 @@ import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.data.repository.AgentExperienceRepository
 import io.github.mangi.eta.data.repository.AgentGoalRepository
 import io.github.mangi.eta.data.repository.AgentKnowledgeRepository
-import io.github.mangi.eta.data.repository.OpenCodeEmbeddedGateway
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.ui.app.PredictiveBackController
@@ -72,7 +71,6 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         AgentExperienceRepository.init(this)
         AgentKnowledgeRepository.init(this)
         AgentGoalRepository.init(this)
-        OpenCodeEmbeddedGateway.init(this)
         ProviderRepository.init(this)
         McpServerRepository.init(this)
         XposedServiceHelper.registerListener(this)

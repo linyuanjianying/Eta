@@ -14,7 +14,7 @@ import kotlinx.serialization.json.intOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
- * opencode2api and OpenCode Zen both return OpenAI-style /v1/models data.
+ * OpenCode Zen returns OpenAI-style /v1/models data.
  * A name containing "free" or an explicit zero input+output cost is
  * evidence for *catalog eligibility*, not proof of successful inference.
  */

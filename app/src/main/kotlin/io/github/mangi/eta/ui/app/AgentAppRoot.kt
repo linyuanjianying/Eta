@@ -103,7 +103,6 @@ import io.github.mangi.eta.ui.screens.terminal.WorkspaceScreen
 import io.github.mangi.eta.ui.screens.tools.AgentToolsScreen
 import io.github.mangi.eta.ui.screens.prompts.PromptToolsScreen
 import io.github.mangi.eta.ui.screens.tools.ImageGenSettingsScreen
-import io.github.mangi.eta.ui.screens.tools.OpenCodeGatewayScreen
 import io.github.mangi.eta.ui.screens.tools.WebToolsSettingsScreen
 import io.github.mangi.eta.ui.voice.SpeechOssScreen
 import io.github.mangi.eta.ui.voice.SpeechRecognitionScreen
@@ -505,7 +504,6 @@ fun AgentAppRoot(
                             AgentToolsAction.OpenWebToolsSettings -> pushRoute(AppRoute.WebToolsSettings)
                             AgentToolsAction.OpenImageGenSettings -> pushRoute(AppRoute.ImageGenSettings)
                             AgentToolsAction.OpenToolBoundaries -> pushRoute(AppRoute.ToolBoundaries)
-                            AgentToolsAction.OpenOpenCodeGateway -> pushRoute(AppRoute.OpenCodeGateway)
                             AgentToolsAction.OpenEnhancements -> pushRoute(AppRoute.SystemEnhance)
                             AgentToolsAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
                         }
@@ -517,9 +515,6 @@ fun AgentAppRoot(
             }
             entry<AppRoute.Knowledge>(swipeDismiss = swipeDismiss) {
                 AgentKnowledgeScreen(onBack = ::popRoute)
-            }
-            entry<AppRoute.OpenCodeGateway>(swipeDismiss = swipeDismiss) {
-                OpenCodeGatewayScreen(onBack = ::popRoute)
             }
             entry<AppRoute.ToolBoundaries>(swipeDismiss = swipeDismiss) {
                 PromptToolsScreen(onBack = ::popRoute)

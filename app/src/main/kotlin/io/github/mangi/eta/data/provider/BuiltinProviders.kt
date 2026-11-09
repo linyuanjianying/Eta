@@ -136,7 +136,7 @@ internal object BuiltinProviders {
         ),
         OpenAiCompatibleProviderSetting(
             id = OPENCODE_ID,
-            name = "OpenCode（Zen / opencode2api）",
+            name = "OpenCode（Zen）",
             baseUrl = "https://opencode.ai/zen/v1",
             sourceType = ProviderSourceTypes.OPENCODE,
             isBuiltIn = true,

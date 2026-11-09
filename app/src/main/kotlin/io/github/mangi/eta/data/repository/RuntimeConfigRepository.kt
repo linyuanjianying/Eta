@@ -224,7 +224,7 @@ internal object RuntimeConfigRepository {
             customHeaders = provider.customHeaders + model.customHeaders,
             customBody = provider.customBody + model.customBody,
         )
-        return OpenCodeEmbeddedGateway.effectiveModelConfig(provider, runtime)
+        return runtime
     }
 
     fun reasoningCapabilities(provider: ProviderSetting, model: Model): ModelReasoningCapabilities? {
