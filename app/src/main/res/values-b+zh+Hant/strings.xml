@@ -1367,25 +1367,9 @@
   <string name="chat_queue_remove">移除排隊訊息</string>
   <string name="chat_queue_images_only">[%1$d 張圖片]</string>
   <string name="chat_queue_files_only">[%1$d 個檔案]</string>
-  <string name="route_reverse_capability">逆向能力</string>
-  <string name="reverse_capability_title">逆向能力</string>
-  <string name="reverse_capability_summary">一个开关同时控制逆向技能是否可用与作战协议是否注入。关闭后屏蔽逆向技能并停止注入。</string>
-  <string name="reverse_capability_skills_group">逆向技能</string>
-  <string name="reverse_capability_skills_on">逆向技能可用：%2$d 个技能中有 %1$d 个属于逆向集合。</string>
-  <string name="reverse_capability_skills_off">逆向技能已屏蔽：%2$d 个技能中有 %1$d 个被隐藏；新装的非逆向技能不受影响。</string>
-  <string name="reverse_capability_protocol_group">作战协议</string>
-  <string name="reverse_capability_protocol_empty">尚未填写协议。打开编辑器写下你自己的工作指令即可。</string>
-  <string name="reverse_capability_protocol_status">%1$d 字符 · 版本 %2$s</string>
-  <string name="reverse_capability_protocol_truncated">已超过注入上限，只发送前 %1$d 个字符。</string>
-  <string name="reverse_capability_protocol_note">协议是你自己的文本：作为独立系统消息下发，绝不执行，也不被当作技能解析。</string>
-  <string name="reverse_capability_open_editor">编辑协议</string>
-  <string name="reverse_capability_editor_title">编辑作战协议</string>
-  <string name="reverse_capability_editor_hint">写下工作方式、交付格式或流程约定。纯文本，仅作为用户撰写的指引注入，不会被执行。</string>
-  <string name="reverse_capability_editor_save">保存</string>
-  <string name="reverse_capability_editor_clear">清空</string>
-  <string name="reverse_capability_editor_clear_confirm_title">清空作战协议？</string>
-  <string name="reverse_capability_editor_clear_confirm_summary">原文件会先备份，随后立即停止注入。</string>
-  <string name="reverse_capability_editor_counter">%1$d / %2$d 字符</string>
-  <string name="reverse_capability_editor_saved">已保存</string>
-  <string name="reverse_capability_editor_empty_draft">草稿为空：保存将清空当前协议文件。</string>
+
+  <string name="conversation_branch">在新對話中分支</string>
+  <string name="conversation_branch_title">%1$s · 分支</string>
+  <string name="conversation_branch_unavailable">無法從此處分支：僅支援上下文完整且工具呼叫已結束的輪次。</string>
+  <string name="conversation_branch_failed">建立分支失敗，原對話已保留，請重試。</string>
 </resources>

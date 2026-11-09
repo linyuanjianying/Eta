@@ -434,6 +434,13 @@ internal object AgentConversationStore {
                         outputTokens = usage?.outputTokens,
                         reasoningTokens = usage?.reasoningTokens,
                         cachedTokens = usage?.cachedTokens,
+                        stepCount = usage?.stepCount,
+                        llmMs = usage?.llmMs,
+                        toolMs = usage?.toolMs,
+                        ttftMs = usage?.ttftMs,
+                        ttftSteps = usage?.ttftSteps,
+                        decodeMs = usage?.decodeMs,
+                        decodeTokens = usage?.decodeTokens,
                     )
                 }
             }
@@ -511,6 +518,13 @@ internal object AgentConversationStore {
                     outputTokens = outputTokens,
                     reasoningTokens = reasoningTokens,
                     cachedTokens = cachedTokens,
+                    stepCount = stepCount,
+                    llmMs = llmMs,
+                    toolMs = toolMs,
+                    ttftMs = ttftMs,
+                    ttftSteps = ttftSteps,
+                    decodeMs = decodeMs,
+                    decodeTokens = decodeTokens,
                 ).takeUnless { it.isEmpty },
             )
 
