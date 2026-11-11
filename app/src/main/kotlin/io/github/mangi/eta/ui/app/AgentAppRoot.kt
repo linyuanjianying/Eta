@@ -53,7 +53,6 @@ import io.github.mangi.eta.ui.AppearanceSettingsScreen
 import io.github.mangi.eta.local.incoming.rememberIncomingDropTarget
 import io.github.mangi.eta.ui.IncomingShareRequest
 import io.github.mangi.eta.ui.screens.tools.ReverseCapabilitySettingsScreen
-import io.github.mangi.eta.ui.screens.tools.CombatProtocolEditorScreen
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -414,6 +413,10 @@ fun AgentAppRoot(
         ) {
             entry<AppRoute.Home>(swipeDismiss = swipeDismiss) {
                 RoutedShell(route = AppRoute.Home, applyShellPadding = false) { shellPadding ->
+                    val chatDropTarget = rememberIncomingDropTarget(
+                        enabled = agentState.homeState.isConversationLoaded &&
+                            agentState.homeState.roleplayChatUi() == null,
+                    ) { incoming -> agentState.acceptSharedContent(incoming) }
                     AgentHomeScreen(
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
@@ -531,13 +534,7 @@ fun AgentAppRoot(
             entry<AppRoute.ReverseCapability>(swipeDismiss = swipeDismiss) {
                 val scope = rememberCoroutineScope()
                 val store = remember { ReverseCapabilitySettingsStore(context, scope) }
-                ReverseCapabilitySettingsScreen(store = store, onBack = ::popRoute,
-                    onOpenProtocolEditor = { pushRoute(AppRoute.CombatProtocol) })
-            }
-            entry<AppRoute.CombatProtocol>(swipeDismiss = swipeDismiss) {
-                val scope = rememberCoroutineScope()
-                val store = remember { ReverseCapabilitySettingsStore(context, scope) }
-                CombatProtocolEditorScreen(store = store, onBack = ::popRoute)
+                ReverseCapabilitySettingsScreen(store = store, onBack = ::popRoute)
             }
             entry<AppRoute.CompactionSettings>(swipeDismiss = swipeDismiss) {
                 CompactionSettingsScreen(onBack = ::popRoute)

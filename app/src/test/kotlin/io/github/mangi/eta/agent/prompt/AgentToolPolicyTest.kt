@@ -79,10 +79,8 @@ class AgentToolPolicyTest {
 
     @Test
     fun runtimeConditionalToolsAreNotInRequirementsButDoReachTheWhitelist() {
-        // 生图 / 任务清单由运行时按条件发布（生图开关、会话 id），不属于装备目录常驻工具；
-        // requirements 必须与目录严格相等（见 AgentToolRequirementsTest 的护栏），
-        // 所以它们只能出现在白名单候选的显式并集里，不能塞进 requirements。
-        assertTrue(AgentToolRequirements.find("generate_image") == null)
+        // 生图有独立开关，但仍登记能力要求；任务清单按会话注入。
+        assertTrue(AgentToolRequirements.find("generate_image") != null)
         assertTrue(AgentToolRequirements.find("task_write") == null)
         val conditional = setOf(
             io.github.mangi.eta.agent.tool.AgentTaskTool.TASK_WRITE,
@@ -94,11 +92,11 @@ class AgentToolPolicyTest {
     @Test
     fun whitelistCandidatesIncludeRuntimeInjectedTools() {
         val known = AgentToolRequirements.knownToolNames()
-        // subagent、会话历史、任务清单、生图都由运行时另行拼装，不在 requirements 里；
+        // subagent、会话历史、任务清单由运行时另行拼装；生图已登记要求。
         // 界面把它们并进候选，避免「白名单里找不到它们」。
         assertTrue(AgentSubagentToolCatalog.names.contains("subagent"))
         assertFalse(known.contains("subagent"))
         assertFalse(known.contains("task_write"))
-        assertFalse(known.contains("generate_image"))
+        assertTrue(known.contains("generate_image"))
     }
 }

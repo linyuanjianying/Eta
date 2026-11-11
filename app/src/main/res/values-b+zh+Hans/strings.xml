@@ -1449,6 +1449,12 @@
   <string name="chat_queue_remove">移除排队消息</string>
   <string name="chat_queue_images_only">[%1$d 张图片]</string>
   <string name="chat_queue_files_only">[%1$d 个文件]</string>
+  <string name="route_reverse_capability">逆向能力</string>
+  <string name="reverse_capability_title">逆向能力</string>
+  <string name="reverse_capability_summary">同一个开关控制逆向技能是否可用以及作战协议是否注入。关闭后逆向技能将隐藏，协议注入停止。</string>
+  <string name="reverse_capability_skills_group">逆向技能</string>
+  <string name="reverse_capability_skills_on">逆向技能已启用：%1$d / %2$d 项技能属于逆向技能集。</string>
+  <string name="reverse_capability_skills_off">逆向技能已隐藏：%1$d / %2$d 项技能被屏蔽，新安装的非逆向技能不受影响。</string>
 
   <string name="conversation_branch">在新对话中分支</string>
   <string name="conversation_branch_title">%1$s · 分支</string>

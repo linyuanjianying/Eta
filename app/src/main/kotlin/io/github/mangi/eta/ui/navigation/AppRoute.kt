@@ -43,11 +43,9 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object CompactionSettings : AppRoute
 
+    /** 逆向能力总开关与技能统计（协议正文只读注入，页面不再提供编辑入口）。 */
     @Serializable
     data object ReverseCapability : AppRoute
-
-    @Serializable
-    data object CombatProtocol : AppRoute
 
     @Serializable
     data object Characters : AppRoute

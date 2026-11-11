@@ -447,15 +447,9 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiPreference(
-                        title = "逆向能力",
+                        title = stringResource(R.string.reverse_capability_title),
                         icon = { CouiSettingsIcon(Icons.Rounded.Security, SettingsIconColors.Blue) },
                         onClick = { onNavigate(AppRoute.ReverseCapability) },
-                    )
-                    CouiIconDivider()
-                    CouiPreference(
-                        title = "编辑作战协议",
-                        icon = { CouiSettingsIcon(Icons.Rounded.Description, SettingsIconColors.Green) },
-                        onClick = { onNavigate(AppRoute.CombatProtocol) },
                     )
                     CouiIconDivider()
                     CouiPreference(
@@ -914,14 +908,9 @@ private fun SettingsPageContent(
                             onClick = { onNavigate(AppRoute.McpServers) },
                         )
                         ArrowPreference(
-                            title = "逆向能力",
+                            title = stringResource(R.string.reverse_capability_title),
                             startAction = { SettingsIcon(Icons.Rounded.Security, tint = SettingsIconColors.Blue) },
                             onClick = { onNavigate(AppRoute.ReverseCapability) },
-                        )
-                        ArrowPreference(
-                            title = "编辑作战协议",
-                            startAction = { SettingsIcon(Icons.Rounded.Description, tint = SettingsIconColors.Green) },
-                            onClick = { onNavigate(AppRoute.CombatProtocol) },
                         )
                         ArrowPreference(
                             title = "生图（中转站）",

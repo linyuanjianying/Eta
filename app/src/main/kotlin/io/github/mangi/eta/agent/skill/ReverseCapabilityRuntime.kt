@@ -80,9 +80,4 @@ object ReverseCapabilityRuntime {
         entries: Collection<SkillIndexEntry>,
         enabled: Boolean,
     ): List<SkillIndexEntry> = entries.filter { isSkillVisible(it, enabled) }
-
-    /** 预热协议快照（App 启动或编辑页保存后调用），失败静默。 */
-    fun refreshProtocol() {
-        runCatching { AgentCombatProtocolRepository.refresh() }
-    }
 }

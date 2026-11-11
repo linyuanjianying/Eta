@@ -40,14 +40,54 @@ class ReverseCapabilityRegressionTest {
         assertTrue(ReverseCapabilitySettings.isEnabled())
     }
 
-    @Test fun protocolRoundTripAndClearKeepsBackup() {
+    @Test fun protocolIsReadOnlyAndStillLoadedFromDisk() {
         val dir = tmp.newFolder()
         val store = AgentCombatProtocolStore(dir)
         assertFalse(store.snapshot().available)
-        val saved = store.write("Prefer short responses.")
-        assertEquals("Prefer short responses.", saved.content)
-        assertEquals(saved.revision, AgentCombatProtocolStore(dir).snapshot().revision)
-        assertFalse(store.clear().available)
-        assertTrue(java.io.File(dir, "prompts/.backup").listFiles()!!.isNotEmpty())
+        // 应用内不再提供写入/清空入口；用户自行放置的 .md 仍被只读装载并原样注入。
+        val prompts = java.io.File(dir, "prompts").apply { mkdirs() }
+        java.io.File(prompts, "README.md").writeText("ignored")
+        java.io.File(prompts, "笔记.md").writeText("   ")
+        java.io.File(prompts, "作战协议.md").writeText("Prefer short responses.")
+        val loaded = AgentCombatProtocolStore(dir).snapshot()
+        assertTrue(loaded.available)
+        assertEquals("Prefer short responses.", loaded.content)
+        assertEquals("作战协议.md", loaded.fileName)
+        assertEquals(loaded.revision, AgentCombatProtocolStore(dir).snapshot().revision)
     }
+
+    @Test fun promptStillInjectsExistingProtocolButNotWhenDisabled() {
+        val snapshot = io.github.mangi.eta.data.repository.AgentCombatProtocolSnapshot(
+            content = "Prefer short responses.",
+            revision = "abc12345",
+            byteSize = 22,
+            charCount = 22,
+            fileName = "作战协议.md",
+            truncated = false,
+        )
+        val enabled = io.github.mangi.eta.agent.model.AgentPromptBuilder.buildSystemMessages(
+            config = promptConfig(),
+            skillContext = SkillContext.EMPTY,
+            memoryContext = io.github.mangi.eta.agent.memory.AgentMemoryContext.DISABLED,
+            rootAvailable = false,
+            combatProtocol = snapshot,
+        ).toString()
+        assertTrue(enabled.contains("<combat_protocol>"))
+        assertTrue(enabled.contains("Prefer short responses."))
+        val disabled = io.github.mangi.eta.agent.model.AgentPromptBuilder.buildSystemMessages(
+            config = promptConfig(),
+            skillContext = SkillContext.EMPTY,
+            memoryContext = io.github.mangi.eta.agent.memory.AgentMemoryContext.DISABLED,
+            rootAvailable = false,
+            combatProtocol = io.github.mangi.eta.data.repository.AgentCombatProtocolSnapshot.EMPTY,
+        ).toString()
+        assertFalse(disabled.contains("<combat_protocol>"))
+    }
+
+    private fun promptConfig() = io.github.mangi.eta.agent.model.AgentModelClient.ModelConfig(
+        baseUrl = "https://example.invalid/v1",
+        apiKey = "test",
+        model = "test-model",
+        systemPrompt = "",
+    )
 }
