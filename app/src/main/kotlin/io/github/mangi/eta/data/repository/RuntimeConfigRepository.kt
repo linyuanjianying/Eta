@@ -14,6 +14,7 @@ import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.SubagentBudgetSettings
 import io.github.mangi.eta.data.model.SubagentSettings
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.model.runtimeProviderType
@@ -23,6 +24,7 @@ import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import io.github.mangi.eta.data.provider.ProviderConnectionProfile
 import io.github.mangi.eta.data.provider.ReasoningCapabilityResolver
 import io.github.libxposed.service.XposedService
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -40,6 +42,24 @@ internal object RuntimeConfigRepository {
 
     suspend fun setSubagentSettings(settings: SubagentSettings) {
         SettingsDataStore.setSubagentSettings(settings)
+    }
+
+    /**
+     * Subagent 运行预算（已归一化）。
+     *
+     * 预算和 Subagent 模型、思考强度一起序列化在 `subagent_settings_v1` 里，没有独立 prefs key；
+     * 运行时读预算请用本方法或 [subagentBudget]，不要直接读 [SubagentSettings.budget] 的原始字段，
+     * 否则手改过的 JSON 越界值会绕过 `maxIdle ≤ maxRequest ≤ maxRun` 的约束。
+     */
+    fun subagentBudgetFlow() = SettingsDataStore.subagentSettingsFlow().map { it.normalizedBudget }
+
+    suspend fun subagentBudget(): SubagentBudgetSettings =
+        SettingsDataStore.subagentSettings().normalizedBudget
+
+    /** 只更新预算，保留已选的 Subagent 模型与思考强度；写入前同样归一化。 */
+    suspend fun setSubagentBudget(budget: SubagentBudgetSettings) {
+        val current = SettingsDataStore.subagentSettings()
+        SettingsDataStore.setSubagentSettings(current.copy(budget = budget.normalized))
     }
 
     /**

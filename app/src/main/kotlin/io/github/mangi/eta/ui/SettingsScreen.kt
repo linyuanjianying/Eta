@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsVoice
 import androidx.compose.material.icons.rounded.Smartphone
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.SwipeUp
@@ -422,6 +423,13 @@ private fun SettingsPageContent(
                         title = "Subagent",
                         icon = { CouiSettingsIcon(Icons.Rounded.Hub, SettingsIconColors.Blue) },
                         onClick = { onNavigate(AppRoute.Subagents) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = "子代理预算管理",
+                        summary = "时间、调用次数与并发上限",
+                        icon = { CouiSettingsIcon(Icons.Rounded.Speed, SettingsIconColors.Green) },
+                        onClick = { onNavigate(AppRoute.SubagentBudget) },
                     )
                     CouiIconDivider()
                     CouiPreference(
@@ -886,6 +894,17 @@ private fun SettingsPageContent(
                                 )
                             },
                             onClick = { onNavigate(AppRoute.Subagents) },
+                        )
+                        ArrowPreference(
+                            title = "子代理预算管理",
+                            summary = "时间、调用次数与并发上限",
+                            startAction = {
+                                SettingsIcon(
+                                    icon = Icons.Rounded.Speed,
+                                    tint = SettingsIconColors.Green,
+                                )
+                            },
+                            onClick = { onNavigate(AppRoute.SubagentBudget) },
                         )
                         ArrowPreference(
                             title = stringResource(R.string.route_skills),

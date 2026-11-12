@@ -39,6 +39,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object Subagents : AppRoute
 
+    /** 子代理运行预算：时间、调用次数与并发。 */
+    @Serializable
+    data object SubagentBudget : AppRoute
+
     /** 上下文压缩：独立压缩模型、思考强度与摘要提示词。 */
     @Serializable
     data object CompactionSettings : AppRoute

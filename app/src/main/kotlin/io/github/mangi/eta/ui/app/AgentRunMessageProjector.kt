@@ -4,6 +4,8 @@ import android.os.SystemClock
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.runtime.SearchSuggestionsBudget
+import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
+import io.github.mangi.eta.agent.subagent.SubagentActivitySnapshot
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
@@ -317,7 +319,15 @@ internal class AgentRunMessageProjector(
                 message.id.startsWith("$runId-tool-") &&
                 message.status == ToolActivityStatusUi.Running
             ) {
-                message.copy(status = ToolActivityStatusUi.Unknown)
+                // run 已结束却还挂着运行中的工具，属于中断残留：内嵌 subagent 快照
+                // 也必须一并收尾，否则详情面板会停在一个永远不动的转圈画面上。
+                message.copy(
+                    status = ToolActivityStatusUi.Unknown,
+                    command = message.settledSubagentSnapshot(
+                        reason = SUBAGENT_INTERRUPTED_REASON,
+                        interrupted = true,
+                    ),
+                )
             } else {
                 message
             }
@@ -470,6 +480,10 @@ internal class AgentRunMessageProjector(
         val targetId = toolActivityMessageId(runId, event.round, event.toolCallId)
         val targetIndex = messages.indexOfLast { it is ToolActivityMessageUi && it.id == targetId }
         if (targetIndex < 0) return messages
+        val target = messages[targetIndex] as? ToolActivityMessageUi ?: return messages
+        // 外层工具已经收尾（失败/中断/完成）后，迟到的运行中进度不得把界面重新点亮成转圈态。
+        val incoming = SubagentActivitySnapshot.decode(event.snapshotJson)
+        if (target.status != ToolActivityStatusUi.Running && incoming?.isRunning == true) return messages
         return messages.mapIndexed { index, message ->
             if (index == targetIndex && message is ToolActivityMessageUi) {
                 message.copy(command = event.snapshotJson)
@@ -517,9 +531,11 @@ internal class AgentRunMessageProjector(
     ): List<AgentChatMessageUi> =
         messages.map { message ->
             if (message is ToolActivityMessageUi && message.status == ToolActivityStatusUi.Running) {
+                val summary = reason.take(MAX_TOOL_RESULT_PREVIEW_CHARS)
                 message.copy(
                     status = ToolActivityStatusUi.Failed,
-                    resultSummary = reason.take(MAX_TOOL_RESULT_PREVIEW_CHARS),
+                    resultSummary = summary,
+                    command = message.settledSubagentSnapshot(summary, interrupted = false),
                 )
             } else {
                 message
@@ -532,14 +548,37 @@ internal class AgentRunMessageProjector(
     ): List<AgentChatMessageUi> =
         messages.map { message ->
             if (message is ToolActivityMessageUi && message.status == ToolActivityStatusUi.Running) {
+                val summary = reason.take(MAX_TOOL_RESULT_PREVIEW_CHARS)
                 message.copy(
                     status = ToolActivityStatusUi.Unknown,
-                    resultSummary = reason.take(MAX_TOOL_RESULT_PREVIEW_CHARS),
+                    resultSummary = summary,
+                    command = message.settledSubagentSnapshot(summary, interrupted = true),
                 )
             } else {
                 message
             }
         }
+
+    /**
+     * 外层 subagent 工具被失败/中断收尾时，把内嵌快照一并收尾。
+     *
+     * 快照里的步骤状态独立于外层工具状态：只改外层会让详情面板继续按 `running`
+     * 渲染子代理内部步骤，出现「外层已失败，里面还在转圈」的矛盾画面。
+     * 这里只改写状态与错误文案，部分输出与已完成步骤由快照自身保留。
+     */
+    private fun ToolActivityMessageUi.settledSubagentSnapshot(
+        reason: String,
+        interrupted: Boolean,
+    ): String? {
+        if (toolName != AgentSubagentToolCatalog.TOOL_NAME) return command
+        val snapshot = SubagentActivitySnapshot.decode(command) ?: return command
+        val settled = if (interrupted) {
+            snapshot.finishInterrupted(reason)
+        } else {
+            snapshot.finishFailed(reason)
+        }
+        return settled.encode()
+    }
 
     fun clearRun(runId: String) {
         thinkingStartedAt.keys.removeAll { it.startsWith("$runId-thinking-") }
@@ -750,6 +789,9 @@ internal class AgentRunMessageProjector(
 }
 
 private const val MAX_TOOL_RESULT_PREVIEW_CHARS = 48
+
+/** run 结束时仍在运行的工具按中断处理，文案与子代理自身的取消文案保持一致。 */
+private const val SUBAGENT_INTERRUPTED_REASON = "已中断"
 
 internal fun AgentTokenUsage.toUi(): TokenUsageUi =
     TokenUsageUi(

@@ -93,6 +93,7 @@ import io.github.mangi.eta.ui.screens.memory.AgentKnowledgeScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
+import io.github.mangi.eta.ui.screens.subagent.SubagentBudgetSettingsScreen
 import io.github.mangi.eta.ui.screens.subagent.SubagentSettingsScreen
 import io.github.mangi.eta.ui.screens.terminal.LinuxEnvironmentScreen
 import io.github.mangi.eta.ui.screens.terminal.LinuxFilesScreen
@@ -530,6 +531,9 @@ fun AgentAppRoot(
             }
             entry<AppRoute.Subagents>(swipeDismiss = swipeDismiss) {
                 SubagentSettingsScreen(onBack = ::popRoute)
+            }
+            entry<AppRoute.SubagentBudget>(swipeDismiss = swipeDismiss) {
+                SubagentBudgetSettingsScreen(onBack = ::popRoute)
             }
             entry<AppRoute.ReverseCapability>(swipeDismiss = swipeDismiss) {
                 val scope = rememberCoroutineScope()

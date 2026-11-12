@@ -550,7 +550,12 @@ internal object AgentConversationStore {
                 toolName = toolName.orEmpty(),
                 status = toolStatus.orEmpty().toToolStatus(),
                 argumentsSummary = argumentsSummary.orEmpty(),
-                command = content.takeIf(String::isNotBlank),
+                command = content.takeIf(String::isNotBlank)?.let { raw ->
+                    if (toolName == "subagent" && toolStatus == ToolActivityStatusUi.Running.name) {
+                        io.github.mangi.eta.agent.subagent.SubagentActivitySnapshot.decode(raw)
+                            ?.finishInterrupted("运行已中断")?.encode() ?: raw
+                    } else raw
+                },
                 resultSummary = resultSummary,
                 imageCount = imageCount,
             )

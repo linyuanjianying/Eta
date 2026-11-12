@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.agent.runtime.AgentExecutionBudget
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import org.json.JSONArray
 import org.json.JSONObject
@@ -78,10 +79,20 @@ internal class AgentContextSummarizer(
     private fun request(history: List<AgentModelClient.ConversationMessage>): String {
         controller.throwIfCancelled()
         val request = ProviderRequest(config, messages(history), JSONArray(), purpose = ProviderRequestPurpose.COMPACTION)
-        val response = provider.complete(request, controller) { event ->
-            if (event is ProviderEvent.HostedToolStarted || event is ProviderEvent.BlockStart &&
-                event.kind == AssistantBlockKind.TOOL_CALL) throw invalidSummary()
+        // 压缩也是一次真实的模型请求：子代理控制器上登记了预算时同样要计次、同样要有
+        // 请求总时长与空闲看门狗；父 run 的控制器查不到预算，行为保持不变。
+        val budgetRun = AgentExecutionBudget.forController(controller)
+        budgetRun?.beforeModelAttempt()
+        val call = {
+            provider.complete(request, controller) { event ->
+                // 取消后到达的事件直接打断回调，避免迟到数据影响压缩结果判定。
+                controller.throwIfCancelled()
+                budgetRun?.noteProviderEvent(event)
+                if (event is ProviderEvent.HostedToolStarted || event is ProviderEvent.BlockStart &&
+                    event.kind == AssistantBlockKind.TOOL_CALL) throw invalidSummary()
+            }
         }
+        val response = if (budgetRun != null) budgetRun.guardRequest(call) else call()
         controller.throwIfCancelled()
         val summary = response.assistantMessage.optString("content").trim()
         if (response.stopReason != AssistantStopReason.END_TURN ||

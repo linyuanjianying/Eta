@@ -74,6 +74,13 @@ internal fun SubagentActivityRow(
     val running = message.status == ToolActivityStatusUi.Running
     val failed = message.status == ToolActivityStatusUi.Failed ||
         snapshot.status == SubagentActivitySnapshot.STATUS_FAILED
+    // 外层已经收尾、快照却还停在 running（旧归档或迟到的进度）时一律按中断展示：
+    // 既不能报「完成」，也不能再给任何转圈动画。
+    val cancelled = !failed && (
+        message.status == ToolActivityStatusUi.Unknown ||
+            snapshot.status == SubagentActivitySnapshot.STATUS_CANCELLED ||
+            (!running && snapshot.status == SubagentActivitySnapshot.STATUS_RUNNING)
+        )
     val typeLabel = snapshot.subagentType.ifBlank { "subagent" }
     val taskTitle = snapshot.description.ifBlank { message.argumentsSummary.ifBlank { "Subagent" } }
     val subtitle = when {
@@ -82,6 +89,9 @@ internal fun SubagentActivityRow(
         failed -> snapshot.error?.lineSequence()?.firstOrNull()?.takeIf { it.isNotBlank() }
             ?: message.outcomeLine()
             ?: "执行未完成"
+        cancelled -> snapshot.currentAction
+            .takeIf { it.isNotBlank() && it != "正在启动…" }
+            ?: "已中断"
         else -> when {
             snapshot.toolStepCount > 0 -> "完成 · ${snapshot.toolStepCount} 次工具调用"
             else -> message.outcomeLine() ?: "完成"
@@ -168,6 +178,7 @@ internal fun SubagentActivityRow(
                     snapshot = snapshot,
                     running = running,
                     failed = failed,
+                    cancelled = cancelled,
                 )
             }
         }
@@ -181,6 +192,7 @@ internal fun SubagentActivityRow(
                     snapshot = snapshot,
                     running = running,
                     failed = failed,
+                    cancelled = cancelled,
                 )
             }
         }
@@ -226,6 +238,7 @@ private fun SubagentInspectorContent(
     snapshot: SubagentActivitySnapshot,
     running: Boolean,
     failed: Boolean,
+    cancelled: Boolean,
 ) {
     val density = LocalDensity.current
     val maxSheetHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() } * 0.76f
@@ -264,6 +277,7 @@ private fun SubagentInspectorContent(
                         when {
                             running -> MiuixTheme.colorScheme.primary
                             failed -> StatusError
+                            cancelled -> MiuixTheme.colorScheme.onSurfaceVariantSummary
                             else -> StatusSuccess
                         },
                     ),
@@ -332,21 +346,23 @@ private fun SubagentInspectorContent(
                 snapshot.steps.forEachIndexed { index, step ->
                     key(step.id) {
                         val isLastStep = index == snapshot.steps.lastIndex && !running
+                        // 外层已失败/中断时，历史数据里残留的 running 步骤也只画成静态节点。
+                        val stepActive = snapshot.isStepActive(step, outerRunning = running)
                         WorkTimelineNode(
                             icon = if (step.kind == SubagentStepSnapshot.KIND_THINKING) {
                                 Icons.Rounded.Lightbulb
                             } else {
                                 iconForTool(step.toolName)
                             },
-                            tone = when (step.status) {
-                                SubagentStepSnapshot.STATUS_RUNNING -> WorkNodeTone.Running
-                                SubagentStepSnapshot.STATUS_FAILED -> WorkNodeTone.Failed
+                            tone = when {
+                                stepActive -> WorkNodeTone.Running
+                                step.status == SubagentStepSnapshot.STATUS_FAILED -> WorkNodeTone.Failed
                                 else -> WorkNodeTone.Done
                             },
                             isLast = isLastStep,
                             connectTop = index > 0,
                         ) {
-                            SubagentStepRow(step = step)
+                            SubagentStepRow(step = step, active = stepActive)
                         }
                     }
                 }
@@ -423,13 +439,15 @@ private fun SubagentInspectorContent(
 @Composable
 private fun SubagentStepRow(
     step: SubagentStepSnapshot,
+    // 外层工具仍在运行且本步骤自身 running；为 false 时绝不播放转圈动画。
+    active: Boolean,
 ) {
     val hasDetail = step.detail.isNotBlank()
     var expanded by rememberSaveable(step.id) {
         mutableStateOf(step.kind == SubagentStepSnapshot.KIND_THINKING && step.status == SubagentStepSnapshot.STATUS_RUNNING)
     }
-    val running = step.status == SubagentStepSnapshot.STATUS_RUNNING
     val failed = step.status == SubagentStepSnapshot.STATUS_FAILED
+    val cancelled = step.status == SubagentStepSnapshot.STATUS_CANCELLED
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -443,11 +461,12 @@ private fun SubagentStepRow(
         ) {
             ShimmerText(
                 text = step.title.ifBlank { step.toolName.ifBlank { "步骤" } },
-                active = running,
+                active = active,
                 style = MiuixTheme.textStyles.body2,
                 color = when {
-                    running -> MiuixTheme.colorScheme.onSurface
+                    active -> MiuixTheme.colorScheme.onSurface
                     failed -> StatusError
+                    cancelled -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.6f)
                     else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
                 },
                 modifier = Modifier.weight(1f),

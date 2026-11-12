@@ -2,6 +2,9 @@ package io.github.mangi.eta.ui.app
 
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
+import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
+import io.github.mangi.eta.agent.subagent.SubagentActivitySnapshot
+import io.github.mangi.eta.agent.subagent.SubagentStepSnapshot
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
@@ -618,4 +621,187 @@ class AgentRunMessageProjectorTest {
         assertFalse(interruptedNotice.running)
         assertEquals(base + completed, projector.finishContextCompaction(runId, base + completed, "上下文压缩已中断"))
     }
+
+    @Test
+    fun failingRunTerminalizesSubagentSnapshotWhileKeepingPartialOutputAndCompletedSteps() {
+        val projector = AgentRunMessageProjector { 1_000L }
+        val runId = "run-subagent-fail"
+        val snapshot = runningSubagentSnapshot()
+        val messages = projector.startTool(
+            runId,
+            AgentEvent.ToolStarted(
+                round = 1,
+                toolCallId = "call_sub",
+                name = AgentSubagentToolCatalog.TOOL_NAME,
+                argsPreview = "explore · 检索错误日志",
+                command = snapshot.encode(),
+            ),
+            listOf(UserMessageUi(id = "user-$runId", content = "看一下错误日志")),
+        )
+
+        val failed = projector.failRunningTools("模型请求失败：429", messages)
+        val tool = failed.filterIsInstance<ToolActivityMessageUi>().single()
+        assertEquals(ToolActivityStatusUi.Failed, tool.status)
+
+        val settled = requireNotNull(SubagentActivitySnapshot.decode(tool.command))
+        assertEquals(SubagentActivitySnapshot.STATUS_FAILED, settled.status)
+        assertEquals(0, settled.runningStepCount)
+        // 已经完成的部分输出与步骤必须保留，界面才能解释子代理到底做到哪一步。
+        assertEquals("已找到 3 条 ERROR", settled.output)
+        assertEquals(listOf("thinking", "tool"), settled.steps.map { it.kind })
+        assertEquals(
+            listOf(SubagentStepSnapshot.STATUS_SUCCESS, SubagentStepSnapshot.STATUS_FAILED),
+            settled.steps.map { it.status },
+        )
+        assertEquals("模型请求失败：429", settled.error)
+        assertEquals("模型请求失败：429", settled.currentAction)
+    }
+
+    @Test
+    fun interruptedRunMarksSubagentRunningStepsCancelledInsteadOfFailed() {
+        val projector = AgentRunMessageProjector { 1_000L }
+        val runId = "run-subagent-interrupt"
+        val messages = projector.startTool(
+            runId,
+            AgentEvent.ToolStarted(
+                round = 1,
+                toolCallId = "call_sub",
+                name = AgentSubagentToolCatalog.TOOL_NAME,
+                argsPreview = "explore · 检索错误日志",
+                command = runningSubagentSnapshot().encode(),
+            ),
+            listOf(UserMessageUi(id = "user-$runId", content = "看一下错误日志")),
+        )
+
+        val interrupted = projector.interruptRunningTools("任务中断", messages)
+        val tool = interrupted.filterIsInstance<ToolActivityMessageUi>().single()
+        assertEquals(ToolActivityStatusUi.Unknown, tool.status)
+
+        val settled = requireNotNull(SubagentActivitySnapshot.decode(tool.command))
+        assertEquals(SubagentActivitySnapshot.STATUS_CANCELLED, settled.status)
+        assertEquals(0, settled.runningStepCount)
+        assertEquals(
+            listOf(
+                SubagentStepSnapshot.STATUS_SUCCESS,
+                SubagentStepSnapshot.STATUS_CANCELLED,
+            ),
+            settled.steps.map { it.status },
+        )
+        assertEquals("已找到 3 条 ERROR", settled.output)
+        assertEquals("任务中断", settled.currentAction)
+    }
+
+    @Test
+    fun lateSubagentProgressCannotResurrectTerminalOuterTool() {
+        val projector = AgentRunMessageProjector { 1_000L }
+        val runId = "run-subagent-late"
+        val running = runningSubagentSnapshot()
+        val started = projector.startTool(
+            runId,
+            AgentEvent.ToolStarted(
+                round = 1,
+                toolCallId = "call_sub",
+                name = AgentSubagentToolCatalog.TOOL_NAME,
+                argsPreview = "explore · 检索错误日志",
+                command = running.encode(),
+            ),
+            listOf(UserMessageUi(id = "user-$runId", content = "看一下错误日志")),
+        )
+        val settled = projector.failRunningTools("模型请求失败", started)
+
+        // 迟到的运行中进度（队列里的旧快照）不得覆盖终态，否则详情面板会重新转圈。
+        val lateProgress = AgentEvent.SubagentProgress(
+            round = 1,
+            toolCallId = "call_sub",
+            subagentId = running.subagentId,
+            subagentType = running.subagentType,
+            snapshotJson = running.encode(),
+        )
+        assertSame(settled, projector.applyEvent(runId, lateProgress, settled))
+        val tool = settled.filterIsInstance<ToolActivityMessageUi>().single()
+        assertEquals(
+            SubagentActivitySnapshot.STATUS_FAILED,
+            SubagentActivitySnapshot.decode(tool.command)?.status,
+        )
+
+        // 运行中的工具仍能接收进度快照。
+        val progressed = running.copy(currentAction = "正在调用 grep_files", output = "部分输出")
+        val withProgress = projector.applyEvent(
+            runId,
+            lateProgress.copy(snapshotJson = progressed.encode()),
+            started,
+        )
+        val updated = withProgress.filterIsInstance<ToolActivityMessageUi>().single()
+        assertEquals("部分输出", SubagentActivitySnapshot.decode(updated.command)?.output)
+    }
+
+    @Test
+    fun subagentSnapshotTerminalSettlementDoesNotDowngradeStatus() {
+        val snapshot = runningSubagentSnapshot()
+            .finishInterrupted("任务中断")
+            .finishFailed("随后又被判定失败")
+        // 已停在中断终态的步骤不会被二次收尾改写成失败，输出也不丢。
+        assertEquals(SubagentActivitySnapshot.STATUS_CANCELLED, snapshot.status)
+        assertEquals(
+            listOf(SubagentStepSnapshot.STATUS_SUCCESS, SubagentStepSnapshot.STATUS_CANCELLED),
+            snapshot.steps.map { it.status },
+        )
+        assertEquals("已找到 3 条 ERROR", snapshot.output)
+        assertEquals("任务中断", snapshot.currentAction)
+    }
+
+    @Test
+    fun finalizeRunSettlesSubagentSnapshotLeftRunning() {
+        val projector = AgentRunMessageProjector { 1_000L }
+        val runId = "run-subagent-finalize"
+        val messages = projector.startTool(
+            runId,
+            AgentEvent.ToolStarted(
+                round = 1,
+                toolCallId = "call_sub",
+                name = AgentSubagentToolCatalog.TOOL_NAME,
+                argsPreview = "explore · 检索错误日志",
+                command = runningSubagentSnapshot().encode(),
+            ),
+            listOf(UserMessageUi(id = "user-$runId", content = "看一下错误日志")),
+        )
+
+        val tool = projector.finalizeRun(runId, messages)
+            .filterIsInstance<ToolActivityMessageUi>()
+            .single()
+        assertEquals(ToolActivityStatusUi.Unknown, tool.status)
+
+        val settled = requireNotNull(SubagentActivitySnapshot.decode(tool.command))
+        assertEquals(SubagentActivitySnapshot.STATUS_CANCELLED, settled.status)
+        assertEquals(0, settled.runningStepCount)
+        assertEquals("已找到 3 条 ERROR", settled.output)
+    }
+
+    private fun runningSubagentSnapshot(): SubagentActivitySnapshot = SubagentActivitySnapshot(
+        subagentId = "sub_1-abcd1234",
+        subagentType = "explore",
+        description = "检索错误日志",
+        prompt = "分析错误日志里的异常堆栈",
+        model = "test-model",
+        status = SubagentActivitySnapshot.STATUS_RUNNING,
+        currentAction = "正在调用 grep_files",
+        steps = listOf(
+            SubagentStepSnapshot(
+                id = "thinking-1-0",
+                kind = SubagentStepSnapshot.KIND_THINKING,
+                title = "思考",
+                detail = "先定位日志文件",
+                status = SubagentStepSnapshot.STATUS_SUCCESS,
+            ),
+            SubagentStepSnapshot(
+                id = "tool-1-tc1",
+                kind = SubagentStepSnapshot.KIND_TOOL,
+                title = "grep_files",
+                detail = "grep ERROR",
+                status = SubagentStepSnapshot.STATUS_RUNNING,
+                toolName = "grep_files",
+            ),
+        ),
+        output = "已找到 3 条 ERROR",
+    )
 }

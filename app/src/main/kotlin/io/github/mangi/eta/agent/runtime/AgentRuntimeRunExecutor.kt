@@ -45,6 +45,7 @@ import io.github.mangi.eta.data.repository.AgentExperienceRepository
 import io.github.mangi.eta.data.repository.AgentRetainedMemoryRepository
 import io.github.mangi.eta.data.repository.AgentKnowledgeRepository
 import io.github.mangi.eta.data.repository.AgentTaskPlanStore
+import io.github.mangi.eta.data.model.SubagentBudgetSettings
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -86,6 +87,15 @@ internal class AgentRuntimeRunExecutor(
             runBlocking { SettingsDataStore.compactionSettings().effectiveThresholdTokens }
         }.getOrDefault(io.github.mangi.eta.data.model.CompactionSettings.DEFAULT_THRESHOLD_TOKENS)
         val request = originalRequest.copy(config = originalRequest.config.copy(compactionThresholdTokens = threshold))
+        // Subagent 预算在整个 run 内只快照一次：同一 run 内改设置不会变成两套上限。
+        val executionBudget = runCatching {
+            runBlocking { RuntimeConfigRepository.subagentBudget() }
+        }.map(AgentExecutionBudget::fromSettings).getOrElse { throwable ->
+            AndroidAgentLogger.warnThrottled("agent_subagent_budget_unavailable") {
+                "Subagent budget unavailable, fallback to defaults: type=${throwable.safeLogType()}"
+            }
+            AgentExecutionBudget.fromSettings(SubagentBudgetSettings())
+        }
         val runController = session.controller
         val archivedEvents = AgentRunArchiveStore.createEventBuffer(request.handoff)
         var entrySurfaceGuard: EntrySurfaceGuard? = null
@@ -320,6 +330,7 @@ internal class AgentRuntimeRunExecutor(
                         checkpointRecorder,
                     )
                 },
+                executionBudget = executionBudget,
             )
             val runTools = JSONArray(mcpTools.toString()).also { tools ->
                 if (subagentAllowed()) AgentSubagentToolCatalog.appendSchemas(tools)

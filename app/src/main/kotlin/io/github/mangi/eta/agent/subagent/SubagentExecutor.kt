@@ -5,6 +5,7 @@ import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.runtime.AgentEvent
+import io.github.mangi.eta.agent.runtime.AgentExecutionBudget
 import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.skill.SkillContext
@@ -31,6 +32,8 @@ internal class SubagentExecutor(
     private val onProgress: (AgentEvent.SubagentProgress) -> Unit,
     private val nanoTime: () -> Long = System::nanoTime,
     private val combatProtocol: io.github.mangi.eta.data.repository.AgentCombatProtocolSnapshot = io.github.mangi.eta.data.repository.AgentCombatProtocolSnapshot.EMPTY,
+    /** 本次 run 的预算快照；默认不设限，既有构造点与测试保持原行为。 */
+    private val executionBudget: AgentExecutionBudget = AgentExecutionBudget.disabled(),
 ) {
     private val latestSnapshots = ConcurrentHashMap<String, String>()
 
@@ -66,6 +69,50 @@ internal class SubagentExecutor(
             )
         }
 
+        // 并发名额必须在登记「运行中」子代理之前抢到；抢不到就什么都不创建，父任务也不会被拖住。
+        val childController = AgentRunController()
+        val budgetRun = executionBudget.childRun(parentController, childController)
+        return try {
+            if (!budgetRun.awaitConcurrencySlot()) {
+                budgetExhaustedResult(toolCall, description, budgetRun)
+            } else {
+                budgetRun.start()
+                executeWithBudget(
+                    parentRound = parentRound,
+                    toolCall = toolCall,
+                    args = args,
+                    prompt = prompt,
+                    description = description,
+                    requestedType = requestedType,
+                    resumeId = resumeId,
+                    isResume = isResume,
+                    childController = childController,
+                    budgetRun = budgetRun,
+                )
+            }
+        } finally {
+            budgetRun.close()
+        }
+    }
+
+    /**
+     * 已拿到并发名额后的完整执行体。
+     *
+     * 预算运行体由 [execute] 的 finally 关闭：无论正常返回、提前 return 还是抛异常，
+     * 名额、定时线程与控制器映射都会释放。
+     */
+    private fun executeWithBudget(
+        parentRound: Int,
+        toolCall: AgentModelClient.ToolCall,
+        args: JSONObject,
+        prompt: String,
+        description: String,
+        requestedType: String,
+        resumeId: String,
+        isResume: Boolean,
+        childController: AgentRunController,
+        budgetRun: AgentExecutionBudget.ChildRun,
+    ): AgentModelClient.ToolResult {
         val entry: SubagentSessionStore.Entry
         val priorHistory: List<AgentModelClient.ConversationMessage>
         if (isResume) {
@@ -98,7 +145,6 @@ internal class SubagentExecutor(
 
         val profile = entry.profile
         val subagentId = entry.subagentId
-        val childController = AgentRunController()
         val controllerBinding = parentController.register(childController::cancel)
 
         val resolvedConfig = runCatching { configProvider() }.getOrElse { throwable ->
@@ -155,7 +201,9 @@ internal class SubagentExecutor(
                         .toString(),
                 )
             } else {
-                baseToolExecutor.execute(subCall)
+                // 工具在本子代理独占的守护线程上有界执行：共享执行器里的工具未必响应控制器取消，
+                // 直接调用会让卡住的工具拖死子代理循环，父任务也就永远拿不回结果。
+                budgetRun.runTool { baseToolExecutor.execute(subCall) }
             }
         }
 
@@ -235,8 +283,44 @@ internal class SubagentExecutor(
                 tracker.partialOutput()
             }
 
-            val cancelled = parentController.isCancelled ||
-                childController.isCancelled ||
+            // 父 run 被取消优先：不把父的取消误报成预算耗尽。
+            if (parentController.isCancelled) {
+                tracker.markCancelled(partial)
+                publishSnapshot(force = true)
+                throw AgentRunCancelledException()
+            }
+
+            // 预算终止不是用户取消：子控制器这时也是 cancelled，必须先按预算原因归类。
+            val budgetTermination = budgetRun.termination
+            if (budgetTermination != null) {
+                val budgetMessage = budgetRun.terminationMessage
+                    .ifBlank { "Subagent 预算已用尽" }
+                tracker.markFailed(budgetMessage, partial)
+                publishSnapshot(force = true)
+                return AgentModelClient.ToolResult(
+                    content = JSONObject()
+                        .put("ok", false)
+                        .put("code", budgetTermination.code)
+                        .put("subagent_id", subagentId)
+                        .put("subagent_type", profile.name)
+                        .put("description", description)
+                        .put("model", modelLabel)
+                        .put("status", SubagentActivitySnapshot.STATUS_FAILED)
+                        .put("budget", budgetTermination.name.lowercase())
+                        .put("message", budgetMessage)
+                        .apply {
+                            if (partial.isNotBlank()) put("partial_output", partial)
+                            put(
+                                "resume_hint",
+                                "可调用 subagent(resume=\"$subagentId\", prompt=\"继续完成未完部分\", description=\"$description\") 继续，或由主 Agent 直接接手。",
+                            )
+                        }
+                        .toString(),
+                    command = latestSnapshots[toolCall.id],
+                )
+            }
+
+            val cancelled = childController.isCancelled ||
                 throwable is AgentRunCancelledException
             val errorMessage = if (cancelled) {
                 "已停止"
@@ -249,10 +333,6 @@ internal class SubagentExecutor(
                 tracker.markFailed(errorMessage, partial)
             }
             publishSnapshot(force = true)
-
-            if (parentController.isCancelled) {
-                throw AgentRunCancelledException()
-            }
 
             AgentModelClient.ToolResult(
                 content = JSONObject()
@@ -285,7 +365,7 @@ internal class SubagentExecutor(
             )
         } finally {
             controllerBinding.close()
-            SubagentRunRegistry.unregister(subagentId)
+            SubagentRunRegistry.unregister(conversationKey, subagentId)
         }
     }
 
@@ -412,6 +492,33 @@ internal class SubagentExecutor(
                 .put("message", message)
                 .toString(),
         )
+
+    /** 预算在「还没开始执行」阶段就拒绝（并发名额等不到）：给父 Agent 可续接的明确错误码。 */
+    private fun budgetExhaustedResult(
+        toolCall: AgentModelClient.ToolCall,
+        description: String,
+        budgetRun: AgentExecutionBudget.ChildRun,
+    ): AgentModelClient.ToolResult {
+        val termination = budgetRun.termination
+        return AgentModelClient.ToolResult(
+            content = JSONObject()
+                .put("ok", false)
+                .put("code", termination?.code ?: "SUBAGENT_BUDGET_EXCEEDED")
+                .put("description", description)
+                .put("status", SubagentActivitySnapshot.STATUS_FAILED)
+                .put("budget", termination?.name?.lowercase() ?: "concurrency_wait")
+                .put(
+                    "message",
+                    budgetRun.terminationMessage.ifBlank { "Subagent 并发名额不足，本次未执行。" },
+                )
+                .put(
+                    "resume_hint",
+                    "本次 Subagent 未开始执行；减少并行子代理数量或稍后重新调用 subagent 即可。",
+                )
+                .toString(),
+            command = latestSnapshots[toolCall.id],
+        )
+    }
 
     private class StepTracker(
         private val subagentId: String,
@@ -557,7 +664,7 @@ internal class SubagentExecutor(
         }
 
         fun markCancelled(partial: String) = synchronized(lock) {
-            finishAllRunningSteps(SubagentStepSnapshot.STATUS_FAILED)
+            finishAllRunningSteps(SubagentStepSnapshot.STATUS_CANCELLED)
             status = SubagentActivitySnapshot.STATUS_CANCELLED
             errorText = "已停止"
             if (partial.isNotBlank()) finalOutput = partial.take(MAX_OUTPUT_CHARS)
