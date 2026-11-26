@@ -123,6 +123,8 @@ internal object AgentRuntimeWire {
     private const val KEY_MODEL_DISPLAY_NAME = "model_display_name"
     private const val KEY_CONTEXT_WINDOW = "context_window"
     private const val KEY_AUTO_COMPACTION_ENABLED = "auto_compaction_enabled"
+    private const val KEY_REQUEST_COMPACTION_ENABLED = "request_compaction_enabled"
+    private const val KEY_REQUEST_COMPACTION_INTERVAL = "request_compaction_interval"
     private const val KEY_SYSTEM_PROMPT = "system_prompt"
     private const val KEY_ANTHROPIC_VERSION = "anthropic_version"
     private const val KEY_OPENAI_ENDPOINT_MODE = "openai_endpoint_mode"
@@ -351,6 +353,8 @@ internal object AgentRuntimeWire {
         request.rewriteTargetMessageId?.let { putString("rewrite_target_message_id", it) }
         request.config.contextWindow?.let { putInt(KEY_CONTEXT_WINDOW, it) }
         putBoolean(KEY_AUTO_COMPACTION_ENABLED, request.config.autoCompactionEnabled)
+        putBoolean(KEY_REQUEST_COMPACTION_ENABLED, request.config.requestCompactionEnabled)
+        putInt(KEY_REQUEST_COMPACTION_INTERVAL, request.config.requestCompactionInterval)
         AgentWireText.put(this, KEY_SYSTEM_PROMPT, request.config.systemPrompt, payloadDirectory)
         putString(KEY_ANTHROPIC_VERSION, request.config.anthropicVersion)
         putString(KEY_OPENAI_ENDPOINT_MODE, request.config.openAiEndpointMode)
@@ -494,6 +498,11 @@ internal object AgentRuntimeWire {
                     KEY_AUTO_COMPACTION_ENABLED,
                     Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
                 ),
+                requestCompactionEnabled = bundle.getBoolean(KEY_REQUEST_COMPACTION_ENABLED, false),
+                requestCompactionInterval = bundle.getInt(
+                    KEY_REQUEST_COMPACTION_INTERVAL,
+                    Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL,
+                ).takeIf { it > 0 } ?: Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL,
                 systemPrompt = if (readText) AgentWireText.read(bundle, KEY_SYSTEM_PROMPT).orEmpty() else "",
                 anthropicVersion = bundle.getString(KEY_ANTHROPIC_VERSION).orEmpty()
                     .ifBlank { io.github.mangi.eta.data.model.AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION },

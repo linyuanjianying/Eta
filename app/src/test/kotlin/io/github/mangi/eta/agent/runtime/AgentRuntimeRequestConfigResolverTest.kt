@@ -125,6 +125,53 @@ class AgentRuntimeRequestConfigResolverTest {
     }
 
     @Test
+    fun voiceAndOauthPreserveRequestCompactionSelectionUseLocalIntervalAndCannotEscalatePermission() {
+        for (source in listOf(AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE, "external")) {
+            for (localEnabled in listOf(false, true)) for (requested in listOf(false, true)) {
+                val local = modelConfig("", ReasoningEffort.DEFAULT).copy(
+                    providerId = "local-provider",
+                    authMode = if (source == "external") ProviderAuthModes.OPENAI_CHATGPT else ProviderAuthModes.API_KEY,
+                    autoCompactionEnabled = false,
+                    requestCompactionEnabled = localEnabled,
+                    requestCompactionInterval = 151,
+                )
+                val entry = local.copy(requestCompactionEnabled = requested, requestCompactionInterval = 1)
+                val resolved = AgentRuntimeRequestConfigResolver.applyRuntimeConfig(request(source, entry), local).config
+                assertEquals(localEnabled && requested, resolved.requestCompactionEnabled)
+                assertEquals(151, resolved.requestCompactionInterval)
+                assertFalse(resolved.autoCompactionEnabled)
+                for (permitted in listOf(false, true)) {
+                    val constrained = AgentRuntimePolicy.constrain(
+                        resolved,
+                        AgentRuntimePolicy.Permissions(
+                            terminalTools = false, browserTools = false,
+                            requestCompaction = permitted, requestCompactionInterval = 777,
+                        ),
+                    )
+                    assertEquals(localEnabled && requested && permitted, constrained.requestCompactionEnabled)
+                    assertEquals(777, constrained.requestCompactionInterval)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun voiceAndOauthCannotTurnRequestCompactionOnJustBecauseTokenCompactionIsEnabled() {
+        for (source in listOf(AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE, "external")) {
+            val config = modelConfig("", ReasoningEffort.DEFAULT).copy(
+                providerId = "local-provider",
+                authMode = if (source == "external") ProviderAuthModes.OPENAI_CHATGPT else ProviderAuthModes.API_KEY,
+                autoCompactionEnabled = true,
+                requestCompactionEnabled = false,
+            )
+            val resolved = AgentRuntimeRequestConfigResolver.applyRuntimeConfig(request(source, config), config).config
+            assertTrue(resolved.autoCompactionEnabled)
+            assertFalse(resolved.requestCompactionEnabled)
+            assertEquals(95, resolved.requestCompactionInterval)
+        }
+    }
+
+    @Test
     fun externalAssistantRequestKeepsEntryConfig() {
         val entryConfig = modelConfig("entry-key", ReasoningEffort.OFF)
         val request = request(source = "external", config = entryConfig)

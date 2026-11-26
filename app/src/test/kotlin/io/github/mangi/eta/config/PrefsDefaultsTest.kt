@@ -23,6 +23,7 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS to true,
                 Prefs.Keys.AGENT_THINKING_ENABLED to true,
                 Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED to true,
+                Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED to false,
                 Prefs.Keys.AGENT_SUBAGENT_ENABLED to true,
                 Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED to true,
                 Prefs.Keys.AGENT_KEEP_SCREEN_ON_ENABLED to true,
@@ -45,12 +46,50 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
                 Prefs.Keys.AGENT_THINKING_ENABLED,
                 Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED,
+                Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED,
                 Prefs.Keys.AGENT_SUBAGENT_ENABLED,
                 Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED,
                 Prefs.Keys.AGENT_KEEP_SCREEN_ON_ENABLED,
             ),
             Prefs.Keys.LOCAL_AGENT_KEYS,
         )
+    }
+
+    @Test
+    fun requestCompactionIntervalDefaultsAndNeverEntersBooleanKeys() {
+        assertEquals(95, Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL)
+        assertEquals(95, Prefs.requestCompactionInterval(null))
+        assertFalse(Prefs.Keys.BOOLEAN_DEFAULTS.containsKey(Prefs.Keys.AGENT_REQUEST_COMPACTION_INTERVAL))
+        assertFalse(Prefs.Keys.LOCAL_AGENT_KEYS.contains(Prefs.Keys.AGENT_REQUEST_COMPACTION_INTERVAL))
+    }
+
+    @Test
+    fun requestCompactionIntervalRejectsCorruptWrongTypeAndNonPositivePreferences() {
+        for (value in listOf(null, "95", 95L, true, 0, -1, Int.MIN_VALUE)) {
+            val preferences = Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(SharedPreferences::class.java),
+            ) { _, method, arguments ->
+                check(method.name == "getInt")
+                assertEquals(Prefs.Keys.AGENT_REQUEST_COMPACTION_INTERVAL, arguments?.get(0))
+                when (value) {
+                    null -> arguments?.get(1)
+                    is Int -> value
+                    else -> throw ClassCastException("wrong preference type")
+                }
+            } as SharedPreferences
+            assertEquals(95, Prefs.requestCompactionInterval(preferences))
+        }
+        for (value in listOf(1, 95, Int.MAX_VALUE)) {
+            val preferences = Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(SharedPreferences::class.java),
+            ) { _, method, _ ->
+                check(method.name == "getInt")
+                value
+            } as SharedPreferences
+            assertEquals(value, Prefs.requestCompactionInterval(preferences))
+        }
     }
 
     @Test

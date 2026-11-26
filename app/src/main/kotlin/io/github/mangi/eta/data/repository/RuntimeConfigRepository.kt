@@ -159,6 +159,7 @@ internal object RuntimeConfigRepository {
             subagentTools = false,
             hostedWebSearchEnabled = false,
             autoCompactionEnabled = false,
+            requestCompactionEnabled = false,
             supportsSearchSuggestions = false,
             thinkingEnabled = effort.enablesReasoning,
             reasoningEffort = effort,
@@ -208,6 +209,8 @@ internal object RuntimeConfigRepository {
             thinkingEnabled = effort.enablesReasoning,
             reasoningEffort = effort,
             autoCompactionEnabled = primaryConfig.autoCompactionEnabled,
+            // 子代理 resume 尚未接回 contextSnapshot，不能准确延续历史请求计数。
+            requestCompactionEnabled = false,
             supportsSearchSuggestions = false,
         )
     }
@@ -309,6 +312,8 @@ internal object RuntimeConfigRepository {
             modelDisplayName = model.displayName.trim(),
             contextWindow = model.effectiveContextWindow,
             autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+            requestCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED),
+            requestCompactionInterval = Prefs.requestCompactionInterval(),
             subagentTools = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
             systemPrompt = systemPrompt,
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion

@@ -1071,6 +1071,17 @@
   <string name="context_compaction">上下文压缩</string>
   <string name="context_compact_action">压缩上下文</string>
   <string name="settings_auto_compaction">自动压缩上下文</string>
+  <string name="settings_request_compaction">按请求次数压缩</string>
+  <string name="settings_request_compaction_off">关闭</string>
+  <string name="settings_request_compaction_every">每 %1$d 次请求</string>
+  <string name="settings_request_compaction_enabled">启用按请求次数压缩</string>
+  <string name="settings_request_compaction_interval">每多少次请求压缩</string>
+  <string name="settings_request_compaction_interval_hint">请输入正整数。关闭时仍可预设次数，关闭不会清除数值。</string>
+  <string name="settings_request_compaction_interval_invalid">请输入 1 至 %1$d 的整数。空值、0、负数、非数字或超出范围均无法保存。</string>
+  <string name="settings_request_compaction_counting_hint">统计当前会话成功的模型请求，含工具续轮，不含摘要请求和失败重试。</string>
+  <string name="settings_request_compaction_behavior_hint">完整工具批次结束后再压缩。原文保留，可随时回查；生成摘要会额外调用模型。</string>
+  <string name="settings_request_compaction_threshold_hint">独立于按 token 阈值自动压缩；两项均启用时先到先触发。模型上下文窗口未知时，本设置仍有效。</string>
+  <string name="settings_request_compaction_next_run_hint">设置从下一次运行生效。</string>
   <string name="context_usage_description">上下文用量：%1$s</string>
   <string name="memory_budget_summary">每次对话自动携带最多 %1$s 字，其余按需读取</string>
   <string name="memory_over_limit">已超过 1 MiB 上限，请删减</string>

@@ -68,6 +68,8 @@ internal object AgentModelClient {
                     thinkingEnabled = effort.enablesReasoning,
                     reasoningEffort = effort,
                     autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+                    requestCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED),
+                    requestCompactionInterval = Prefs.requestCompactionInterval(),
                     subagentTools = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
                 )
             }
@@ -87,6 +89,8 @@ internal object AgentModelClient {
             modelDisplayName = "GPT-5.5",
             systemPrompt = BuiltinProviders.DEFAULT_SYSTEM_PROMPT,
             autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+            requestCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED),
+            requestCompactionInterval = Prefs.requestCompactionInterval(),
             subagentTools = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
             terminalTools = Prefs.isEnabled(Prefs.Keys.AGENT_TERMINAL_TOOLS),
             browserTools = Prefs.isEnabled(Prefs.Keys.AGENT_BROWSER_TOOLS),
@@ -394,6 +398,8 @@ internal object AgentModelClient {
         val autoCompactionEnabled: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
         val subagentTools: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
         val authMode: String = ProviderAuthModes.API_KEY,
+        val requestCompactionEnabled: Boolean = false,
+        val requestCompactionInterval: Int = Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL,
     ) {
         val usesHostedWebSearch: Boolean
             get() = hostedWebSearchEnabled && when (providerType) {

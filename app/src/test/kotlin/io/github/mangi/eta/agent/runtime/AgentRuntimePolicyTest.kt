@@ -78,6 +78,71 @@ class AgentRuntimePolicyTest {
     }
 
     @Test
+    fun requestCompactionRequiresLocalPermissionAndDoesNotDependOnTokenCompaction() {
+        for (localEnabled in listOf(false, true)) for (automatic in listOf(false, true)) {
+            val preferences = booleanPreferences { key, default ->
+                when (key) {
+                    Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED -> localEnabled
+                    Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED -> automatic
+                    else -> default
+                }
+            }
+            val permissions = AgentRuntimePolicy.permissions(preferences)
+            for (requested in listOf(false, true)) {
+                val config = modelConfig(false, false, false).copy(
+                    autoCompactionEnabled = automatic,
+                    requestCompactionEnabled = requested,
+                    requestCompactionInterval = 1,
+                )
+                val constrained = AgentRuntimePolicy.constrain(config, permissions)
+                assertEquals(localEnabled && requested, constrained.requestCompactionEnabled)
+                assertEquals(automatic, constrained.autoCompactionEnabled)
+                assertEquals(95, constrained.requestCompactionInterval)
+            }
+        }
+    }
+
+    @Test
+    fun requestCompactionIntervalIsAlwaysChosenLocallyAndInvalidLocalValuesFallBack() {
+        for (localInterval in listOf(1, 137, Int.MAX_VALUE, 0, -1, Int.MIN_VALUE)) {
+            val preferences = Proxy.newProxyInstance(
+                javaClass.classLoader, arrayOf(SharedPreferences::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "getInt" -> localInterval
+                    "getBoolean" -> if (args?.get(0) == Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED) true else args?.get(1)
+                    else -> error("Unexpected SharedPreferences method: ${method.name}")
+                }
+            } as SharedPreferences
+            val permissions = AgentRuntimePolicy.permissions(preferences)
+            for (requestedInterval in listOf(1, 95, 999, Int.MAX_VALUE, -1)) {
+                val constrained = AgentRuntimePolicy.constrain(
+                    modelConfig(false, false, false).copy(
+                        requestCompactionEnabled = true,
+                        requestCompactionInterval = requestedInterval,
+                    ),
+                    permissions,
+                )
+                assertTrue(constrained.requestCompactionEnabled)
+                assertEquals(localInterval.takeIf { it > 0 } ?: 95, constrained.requestCompactionInterval)
+            }
+        }
+    }
+
+    @Test
+    fun requestCompactionFailsClosedWhenPreferencesAreUnavailableOrCorrupt() {
+        val corrupt = booleanPreferences { _, _ -> throw ClassCastException("corrupt preference") }
+        for (preferences in listOf(null, corrupt)) {
+            val constrained = AgentRuntimePolicy.constrain(
+                modelConfig(false, false, false).copy(requestCompactionEnabled = true, requestCompactionInterval = 1),
+                AgentRuntimePolicy.permissions(preferences),
+            )
+            assertFalse(constrained.requestCompactionEnabled)
+            assertEquals(95, constrained.requestCompactionInterval)
+        }
+    }
+
+    @Test
     fun callerCannotEnableCapabilitiesThatRuntimeDidNotAuthorize() {
         val constrained = AgentRuntimePolicy.constrain(
             config = modelConfig(
@@ -216,6 +281,7 @@ class AgentRuntimePolicyTest {
                     arguments?.get(0) as String,
                     arguments[1] as Boolean,
                 )
+                "getInt" -> arguments?.get(1)
                 "equals" -> proxy === arguments?.firstOrNull()
                 "hashCode" -> System.identityHashCode(proxy)
                 "toString" -> "BooleanSharedPreferences"

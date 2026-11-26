@@ -67,6 +67,30 @@ class RuntimeConfigRepositoryTest {
         )
         assertEquals(ProviderAuthModes.API_KEY, restored.authMode)
         assertEquals("fixture-key", restored.apiKey)
+        assertFalse(restored.requestCompactionEnabled)
+        assertEquals(95, restored.requestCompactionInterval)
+    }
+
+    @Test
+    fun modelConfigDefaultsAndRequestCompactionJsonRoundTripRemainIndependent() {
+        val base = AgentModelClient.ModelConfig(
+            baseUrl = "https://example.invalid", apiKey = "fixture", model = "fixture", systemPrompt = "",
+        )
+        assertFalse(base.requestCompactionEnabled)
+        assertEquals(95, base.requestCompactionInterval)
+        for (enabled in listOf(false, true)) for (automatic in listOf(false, true)) {
+            for (interval in listOf(1, 95, Int.MAX_VALUE)) {
+                val config = base.copy(
+                    requestCompactionEnabled = enabled, requestCompactionInterval = interval,
+                    autoCompactionEnabled = automatic,
+                )
+                val raw = RuntimeConfigRepository.runtimeConfigJson(config)
+                val root = Json.parseToJsonElement(raw).jsonObject
+                assertEquals(enabled.toString(), root.getValue("requestCompactionEnabled").jsonPrimitive.content)
+                assertEquals(interval.toString(), root.getValue("requestCompactionInterval").jsonPrimitive.content)
+                assertEquals(config, Json.decodeFromString<AgentModelClient.ModelConfig>(raw))
+            }
+        }
     }
 
     @Test
@@ -129,6 +153,8 @@ class RuntimeConfigRepositoryTest {
             reasoningEffort = ReasoningEffort.HIGH,
             hostedWebSearchEnabled = true,
             autoCompactionEnabled = true,
+            requestCompactionEnabled = true,
+            requestCompactionInterval = 1,
             reasoningCapabilities = ModelReasoningCapabilities(
                 supportedEfforts = listOf(ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH),
                 canDisable = true,
@@ -142,6 +168,7 @@ class RuntimeConfigRepositoryTest {
         assertFalse(autoDisabled.thinkingEnabled)
         assertFalse(autoDisabled.hostedWebSearchEnabled)
         assertFalse(autoDisabled.autoCompactionEnabled)
+        assertFalse(autoDisabled.requestCompactionEnabled)
 
         val explicitMedium = RuntimeConfigRepository.applyTitleGenerationSettings(
             disableableConfig,
@@ -149,6 +176,7 @@ class RuntimeConfigRepositoryTest {
         )
         assertEquals(ReasoningEffort.MEDIUM, explicitMedium.reasoningEffort)
         assertEquals(true, explicitMedium.thinkingEnabled)
+        assertFalse(explicitMedium.requestCompactionEnabled)
 
         val mandatoryConfig = disableableConfig.copy(
             reasoningCapabilities = ModelReasoningCapabilities(

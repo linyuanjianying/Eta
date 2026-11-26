@@ -19,6 +19,8 @@ internal object AgentRuntimePolicy {
         val autoCompaction: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
         val subagentTools: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
         val virtualDisplay: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED),
+        val requestCompaction: Boolean = false,
+        val requestCompactionInterval: Int = Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL,
     )
 
     fun permissions(preferences: SharedPreferences?): Permissions =
@@ -31,6 +33,8 @@ internal object AgentRuntimePolicy {
             deviceSensitiveActionTools =
                 preferences.allowed(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
             autoCompaction = preferences.allowed(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+            requestCompaction = preferences.allowed(Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED),
+            requestCompactionInterval = Prefs.requestCompactionInterval(preferences),
             subagentTools = preferences.allowed(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
             virtualDisplay = preferences.allowed(Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED),
         )
@@ -52,6 +56,9 @@ internal object AgentRuntimePolicy {
             thinkingEnabled = thinkingEnabled,
             reasoningEffort = effectiveEffort,
             autoCompactionEnabled = config.autoCompactionEnabled && permissions.autoCompaction,
+            requestCompactionEnabled = config.requestCompactionEnabled && permissions.requestCompaction,
+            requestCompactionInterval = permissions.requestCompactionInterval.takeIf { it > 0 }
+                ?: Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL,
             subagentTools = config.subagentTools && permissions.subagentTools,
         )
         if (thinkingEnabled) return constrained

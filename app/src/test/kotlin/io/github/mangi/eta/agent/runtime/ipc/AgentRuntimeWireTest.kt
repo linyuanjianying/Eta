@@ -106,6 +106,37 @@ class AgentRuntimeWireTest {
     }
 
     @Test
+    fun requestCompactionSettingsSurviveBothIpcPathsIndependentlyOfTokenCompaction() {
+        for (enabled in listOf(false, true)) for (interval in listOf(1, 95, Int.MAX_VALUE)) {
+            val request = AgentRuntimeWire.RunRequest(
+                runId = "request-compaction", prompt = "继续", images = emptyList(),
+                config = AgentModelClient.ModelConfig(
+                    baseUrl = "https://example.invalid", apiKey = "fixture", model = "fixture", systemPrompt = "",
+                    autoCompactionEnabled = false,
+                    requestCompactionEnabled = enabled,
+                    requestCompactionInterval = interval,
+                    reasoningEffort = ReasoningEffort.OFF,
+                ),
+            )
+            for (bundle in listOf(AgentRuntimeWire.toLegacyBundle(request), AgentRuntimeWire.toBundle(request, emptyList()))) {
+                assertEquals(enabled, bundle.getBoolean("request_compaction_enabled"))
+                assertEquals(interval, bundle.getInt("request_compaction_interval"))
+                assertEquals(request, AgentRuntimeWire.runRequestFromBundle(bundle))
+                bundle.remove("request_compaction_enabled")
+                bundle.remove("request_compaction_interval")
+                val legacy = AgentRuntimeWire.runRequestFromBundle(bundle).config
+                assertFalse(legacy.requestCompactionEnabled)
+                assertEquals(95, legacy.requestCompactionInterval)
+                assertFalse(legacy.autoCompactionEnabled)
+                for (invalid in listOf(0, -1, Int.MIN_VALUE)) {
+                    bundle.putInt("request_compaction_interval", invalid)
+                    assertEquals(95, AgentRuntimeWire.runRequestFromBundle(bundle).config.requestCompactionInterval)
+                }
+            }
+        }
+    }
+
+    @Test
     fun compactionUsageIsOptionalAndOldMeasuredFieldsRemainReadable() {
         for (event in listOf(
             AgentEvent.ContextCompaction("manual", "started"),

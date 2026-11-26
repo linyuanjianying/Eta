@@ -1181,6 +1181,17 @@
   <string name="context_compaction">Context compaction</string>
   <string name="context_compact_action">Compact context</string>
   <string name="settings_auto_compaction">Automatic context compaction</string>
+  <string name="settings_request_compaction">Compact by request count</string>
+  <string name="settings_request_compaction_off">Off</string>
+  <string name="settings_request_compaction_every">Every %1$d requests</string>
+  <string name="settings_request_compaction_enabled">Enable request-count compaction</string>
+  <string name="settings_request_compaction_interval">Requests per compaction</string>
+  <string name="settings_request_compaction_interval_hint">Use a positive integer. You can preset it while off; turning this off keeps the value.</string>
+  <string name="settings_request_compaction_interval_invalid">Enter a whole number from 1 to %1$d. Empty, zero, negative, non-numeric, and larger values cannot be saved.</string>
+  <string name="settings_request_compaction_counting_hint">Counts successful model requests in the current conversation, including tool continuation rounds. Summary requests and failed retries do not count.</string>
+  <string name="settings_request_compaction_behavior_hint">Compacts after a complete tool batch. Original messages remain available for lookup; generating a summary makes an extra model request.</string>
+  <string name="settings_request_compaction_threshold_hint">Independent of token-based compaction: whichever enabled threshold is reached first triggers compaction. Works even when the context window is unknown.</string>
+  <string name="settings_request_compaction_next_run_hint">Changes apply from the next run.</string>
   <string name="voice_audio_permission">请在 Eta 应用权限中允许麦克风，然后重新唤醒；点击麦克风可打开设置</string>
   <string name="voice_use_keyboard">切换键盘输入</string>
   <string name="voice_finish_speech">结束录音并发送</string>

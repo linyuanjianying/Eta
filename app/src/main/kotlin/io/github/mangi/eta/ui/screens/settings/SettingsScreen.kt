@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
@@ -52,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -230,6 +232,68 @@ private fun SettingsPageContent(
         mutableStateOf(Prefs.cachedRemotePreferencesForUi(EtaApp.serviceInstance))
     }
     val agentPrefs = remember { Prefs.localAgentPreferences() }
+    var requestCompactionSettings by remember(agentPrefs) {
+        mutableStateOf(readRequestCompactionSettings(agentPrefs))
+    }
+    var requestCompactionDraft by rememberSaveable(stateSaver = RequestCompactionSettingsDraft.Saver) {
+        mutableStateOf<RequestCompactionSettingsDraft?>(null)
+    }
+    var retainedRequestCompactionDraft by remember { mutableStateOf<RequestCompactionSettingsDraft?>(null) }
+    if (requestCompactionDraft != null) retainedRequestCompactionDraft = requestCompactionDraft
+    var requestCompactionSaving by remember { mutableStateOf(false) }
+    DisposableEffect(agentPrefs) {
+        val targetPrefs = agentPrefs ?: return@DisposableEffect onDispose {}
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { changedPrefs, key ->
+            when (key) {
+                null,
+                Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED,
+                Prefs.Keys.AGENT_REQUEST_COMPACTION_INTERVAL,
+                -> if (!requestCompactionSaving) {
+                    // Do not publish the in-memory edit before the disk commit finishes.
+                    requestCompactionSettings = readRequestCompactionSettings(changedPrefs)
+                }
+            }
+        }
+        targetPrefs.registerOnSharedPreferenceChangeListener(listener)
+        requestCompactionSettings = readRequestCompactionSettings(targetPrefs)
+        onDispose { targetPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val openRequestCompactionSettings: () -> Unit = {
+        val latest = readRequestCompactionSettings(agentPrefs)
+        requestCompactionSettings = latest
+        requestCompactionDraft = RequestCompactionSettingsDraft(latest.enabled, latest.interval.toString())
+    }
+    val saveRequestCompactionSettings: (RequestCompactionSettingsDraft, Int) -> Unit = { draft, interval ->
+        if (!requestCompactionSaving && requestCompactionDraft === draft) {
+            val enabled = draft.enabled
+            requestCompactionSaving = true
+            coroutineScope.launch {
+                try {
+                    val saved = withContext(Dispatchers.IO) {
+                        runCatching {
+                            Prefs.setRequestCompactionSettings(enabled, interval, EtaApp.serviceInstance)
+                        }.getOrDefault(false)
+                    }
+                    if (saved) {
+                        requestCompactionSettings = readRequestCompactionSettings(agentPrefs)
+                    }
+                    if (requestCompactionDraft === draft) {
+                        if (saved) {
+                            requestCompactionDraft = null
+                        } else {
+                            Toast.makeText(
+                                context.applicationContext,
+                                context.getString(R.string.settings_write_failed),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                } finally {
+                    requestCompactionSaving = false
+                }
+            }
+        }
+    }
     val pickerState = remember(providers, selectedProviderId, selectedModelId) {
         AgentModelPickerProjector.project(providers, selectedProviderId, selectedModelId)
     }
@@ -329,10 +393,13 @@ private fun SettingsPageContent(
     LaunchedEffect(Unit) {
         refreshSystemStatuses()
     }
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, agentPrefs) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 refreshSystemStatuses()
+                if (!requestCompactionSaving) {
+                    requestCompactionSettings = readRequestCompactionSettings(agentPrefs)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -438,6 +505,16 @@ private fun SettingsPageContent(
         title = stringResource(R.string.ui_set_up_7debf9),
         onBack = onBack,
         overlay = {
+            RequestCompactionSettingsDialog(
+                show = requestCompactionDraft != null,
+                draft = requestCompactionDraft ?: retainedRequestCompactionDraft,
+                saving = requestCompactionSaving,
+                onDismiss = { if (!requestCompactionSaving) requestCompactionDraft = null },
+                onDismissFinished = {
+                    if (requestCompactionDraft == null) retainedRequestCompactionDraft = null
+                },
+                onSave = saveRequestCompactionSettings,
+            )
             val activeUpdate = availableUpdate ?: retainedUpdate
             GlassDialog(
                 show = availableUpdate != null,
@@ -524,6 +601,17 @@ private fun SettingsPageContent(
                     key = Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED,
                     icon = Icons.Rounded.Compress,
                     history = enhancementHistory,
+                )
+                ArrowPreference(
+                    title = stringResource(R.string.settings_request_compaction),
+                    summary = if (requestCompactionSettings.enabled) {
+                        stringResource(R.string.settings_request_compaction_every, requestCompactionSettings.interval)
+                    } else {
+                        stringResource(R.string.settings_request_compaction_off)
+                    },
+                    startAction = { SettingsIcon(Icons.Rounded.Repeat, enabled = agentPrefs != null) },
+                    enabled = agentPrefs != null && !requestCompactionSaving,
+                    onClick = openRequestCompactionSettings,
                 )
                 ArrowPreference(
                     title = stringResource(R.string.conversation_title_settings_title),
@@ -862,6 +950,20 @@ private fun SwitchPref(
         enabled = enabled,
     )
 }
+
+private data class RequestCompactionSettingsValues(val enabled: Boolean, val interval: Int)
+
+private fun readRequestCompactionSettings(preferences: SharedPreferences?): RequestCompactionSettingsValues =
+    RequestCompactionSettingsValues(
+        enabled = runCatching {
+            preferences?.getBoolean(Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED, false) ?: false
+        }.getOrDefault(false),
+        interval = if (preferences == null) {
+            Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL
+        } else {
+            Prefs.requestCompactionInterval(preferences)
+        },
+    )
 
 private fun putBooleanSync(
     prefs: SharedPreferences,

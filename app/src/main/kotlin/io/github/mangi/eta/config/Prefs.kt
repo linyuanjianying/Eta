@@ -30,6 +30,8 @@ internal object Prefs {
 
     private const val LOCAL_AGENT_GROUP = "eta_agent_preferences"
 
+    const val DEFAULT_REQUEST_COMPACTION_INTERVAL = 95
+
     /** 所有功能开关 key。默认值按功能风险独立定义。 */
     object Keys {
         const val POWER_KEY_ASSISTANT_TARGET = "power_key_assistant_target"
@@ -46,6 +48,8 @@ internal object Prefs {
         const val AGENT_THINKING_ENABLED = "agent_thinking_enabled"
         const val AGENT_DEFAULT_REASONING_EFFORT = "agent_default_reasoning_effort"
         const val AGENT_AUTO_COMPACTION_ENABLED = "agent_auto_compaction_enabled"
+        const val AGENT_REQUEST_COMPACTION_ENABLED = "agent_request_compaction_enabled"
+        const val AGENT_REQUEST_COMPACTION_INTERVAL = "agent_request_compaction_interval"
         const val AGENT_SUBAGENT_ENABLED = "agent_subagent_enabled"
         const val AGENT_VIRTUAL_DISPLAY_ENABLED = "agent_virtual_display_enabled"
         const val AGENT_KEEP_SCREEN_ON_ENABLED = "agent_keep_screen_on_enabled"
@@ -65,6 +69,7 @@ internal object Prefs {
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS to true,
             AGENT_THINKING_ENABLED to true,
             AGENT_AUTO_COMPACTION_ENABLED to true,
+            AGENT_REQUEST_COMPACTION_ENABLED to false,
             AGENT_SUBAGENT_ENABLED to true,
             AGENT_VIRTUAL_DISPLAY_ENABLED to true,
             AGENT_KEEP_SCREEN_ON_ENABLED to true,
@@ -79,6 +84,7 @@ internal object Prefs {
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
             AGENT_THINKING_ENABLED,
             AGENT_AUTO_COMPACTION_ENABLED,
+            AGENT_REQUEST_COMPACTION_ENABLED,
             AGENT_SUBAGENT_ENABLED,
             AGENT_VIRTUAL_DISPLAY_ENABLED,
             AGENT_KEEP_SCREEN_ON_ENABLED,
@@ -140,6 +146,101 @@ internal object Prefs {
         }.getOrNull()
         val parsed = ReasoningEffort.fromWireValue(raw)
         return if (parsed != null && parsed != ReasoningEffort.OFF) parsed else ReasoningEffort.DEFAULT
+    }
+
+    fun requestCompactionInterval(
+        preferences: SharedPreferences? = localAgent ?: remote,
+    ): Int = runCatching {
+        preferences?.getInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, DEFAULT_REQUEST_COMPACTION_INTERVAL)
+    }.getOrNull()?.takeIf { it > 0 } ?: DEFAULT_REQUEST_COMPACTION_INTERVAL
+
+    /**
+     * 本地提交成功即视为保存成功；Hook 配置仅作尽力同步，不影响本地事实源。
+     * 提交失败会恢复两键的旧内存状态并返回 false；回滚也不保证磁盘持久化成功。
+     */
+    fun setRequestCompactionSettings(
+        enabled: Boolean,
+        interval: Int,
+        service: XposedService? = null,
+    ): Boolean {
+        if (interval <= 0) return false
+        val local = localAgent ?: return false
+        val committed = synchronized(local) {
+            // 只快照这两个键；损坏类型也原样保留，不能用 getAll() 读取其他配置。
+            val previous = runCatching {
+                listOf(Keys.AGENT_REQUEST_COMPACTION_ENABLED, Keys.AGENT_REQUEST_COMPACTION_INTERVAL)
+                    .associateWith { snapshotPreference(local, it) }
+            }.getOrElse { return false }
+            val saved = runCatching {
+                local.edit()
+                    .putBoolean(Keys.AGENT_REQUEST_COMPACTION_ENABLED, enabled)
+                    .putInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, interval)
+                    .commit()
+            }.getOrDefault(false)
+            if (!saved) {
+                fun rollbackEditor(): SharedPreferences.Editor = local.edit().also { editor ->
+                    previous.forEach { (key, value) -> value.restore(editor, key) }
+                }
+                // Android commit() 先修改内存，即使返回 false 也必须回滚。
+                // 回滚 commit 再次失败仍不能宣称磁盘成功；本次保存始终返回 false。
+                runCatching { rollbackEditor().commit() }.onFailure {
+                    // 如异常发生在 commitToMemory 前，限一次 apply 尽力恢复内存，不等待磁盘。
+                    runCatching { rollbackEditor().apply() }
+                }
+            }
+            saved
+        }
+        if (committed) {
+            runCatching {
+                remotePreferencesForUi(service)?.edit()
+                    ?.putBoolean(Keys.AGENT_REQUEST_COMPACTION_ENABLED, enabled)
+                    ?.putInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, interval)
+                    ?.commit()
+            }
+        }
+        return committed
+    }
+
+    private data class PreferenceSnapshot(val existed: Boolean, val value: Any? = null) {
+        fun restore(editor: SharedPreferences.Editor, key: String) {
+            if (!existed) {
+                editor.remove(key)
+                return
+            }
+            when (value) {
+                is Boolean -> editor.putBoolean(key, value)
+                is Int -> editor.putInt(key, value)
+                is Long -> editor.putLong(key, value)
+                is Float -> editor.putFloat(key, value)
+                is String -> editor.putString(key, value)
+                is Set<*> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    editor.putStringSet(key, value as Set<String>)
+                }
+                else -> error("Unsupported preference value")
+            }
+        }
+    }
+
+    private fun snapshotPreference(preferences: SharedPreferences, key: String): PreferenceSnapshot {
+        if (!preferences.contains(key)) return PreferenceSnapshot(existed = false)
+        // SharedPreferences 没有按键读取原始值的 API；只探测该键的六种合法存储类型。
+        val readers = listOf<() -> Any?>(
+            { preferences.getBoolean(key, false) },
+            { preferences.getInt(key, 0) },
+            { preferences.getLong(key, 0L) },
+            { preferences.getFloat(key, 0f) },
+            { preferences.getString(key, null) },
+            { preferences.getStringSet(key, null)?.toSet() },
+        )
+        for (read in readers) {
+            try {
+                return PreferenceSnapshot(existed = true, value = checkNotNull(read()))
+            } catch (_: ClassCastException) {
+                // 错类型继续探测；其他读取异常在写入前直接中止保存。
+            }
+        }
+        error("Unsupported preference value")
     }
 
     fun powerAssistantTarget(): PowerAssistantTarget = powerAssistantTarget(remote)
@@ -216,6 +317,17 @@ internal object Prefs {
                     localEditor.putBoolean(key, remotePreferences.getBoolean(key, default))
                     updateLocal = true
                 }
+            }
+        }
+        // Int 配置不属于 LOCAL_AGENT_KEYS 的布尔协议，独立迁移并校验损坏值。
+        when {
+            local.contains(Keys.AGENT_REQUEST_COMPACTION_INTERVAL) -> {
+                remoteEditor.putInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, requestCompactionInterval(local))
+                updateRemote = true
+            }
+            remotePreferences.contains(Keys.AGENT_REQUEST_COMPACTION_INTERVAL) -> {
+                localEditor.putInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, requestCompactionInterval(remotePreferences))
+                updateLocal = true
             }
         }
         when {
