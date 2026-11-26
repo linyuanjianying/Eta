@@ -3,6 +3,7 @@ package io.github.mangi.eta.agent.runtime
 import android.content.SharedPreferences
 import io.github.mangi.eta.agent.model.provider.AgentModelClient
 import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.config.RequestCompactionTarget
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -20,6 +21,7 @@ internal object AgentRuntimePolicy {
         val subagentTools: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
         val virtualDisplay: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED),
         val requestCompaction: Boolean = false,
+        val requestCompactionTarget: RequestCompactionTarget? = null,
         val requestCompactionInterval: Int = Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL,
     )
 
@@ -34,6 +36,7 @@ internal object AgentRuntimePolicy {
                 preferences.allowed(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
             autoCompaction = preferences.allowed(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
             requestCompaction = preferences.allowed(Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED),
+            requestCompactionTarget = Prefs.requestCompactionTarget(preferences),
             requestCompactionInterval = Prefs.requestCompactionInterval(preferences),
             subagentTools = preferences.allowed(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
             virtualDisplay = preferences.allowed(Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED),
@@ -45,6 +48,7 @@ internal object AgentRuntimePolicy {
     ): AgentModelClient.ModelConfig {
         val effectiveEffort = config.effectiveReasoningEffort
         val thinkingEnabled = effectiveEffort.enablesReasoning
+        val target = permissions.requestCompactionTarget
         val constrained = config.copy(
             terminalTools = config.terminalTools && permissions.terminalTools,
             browserTools = config.browserTools && permissions.browserTools,
@@ -56,7 +60,11 @@ internal object AgentRuntimePolicy {
             thinkingEnabled = thinkingEnabled,
             reasoningEffort = effectiveEffort,
             autoCompactionEnabled = config.autoCompactionEnabled && permissions.autoCompaction,
-            requestCompactionEnabled = config.requestCompactionEnabled && permissions.requestCompaction,
+            requestCompactionEnabled = config.requestCompactionEnabled &&
+                permissions.requestCompaction &&
+                target != null &&
+                target.providerId == config.providerId &&
+                target.modelId == config.model,
             requestCompactionInterval = permissions.requestCompactionInterval.takeIf { it > 0 }
                 ?: Prefs.DEFAULT_REQUEST_COMPACTION_INTERVAL,
             subagentTools = config.subagentTools && permissions.subagentTools,

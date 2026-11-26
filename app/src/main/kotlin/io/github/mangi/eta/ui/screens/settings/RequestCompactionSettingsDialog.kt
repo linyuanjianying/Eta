@@ -25,6 +25,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.config.RequestCompactionTarget
+import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.ui.components.DialogActions
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import top.yukonga.miuix.kmp.basic.Text
@@ -34,20 +36,52 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** Page-owned draft, separate from the preferences until Save succeeds. */
-internal class RequestCompactionSettingsDraft(enabled: Boolean, interval: String) {
+internal class RequestCompactionSettingsDraft(
+    enabled: Boolean,
+    interval: String,
+    target: RequestCompactionTarget? = null,
+    providerId: String? = target?.providerId,
+    modelId: String? = target?.modelId,
+) {
     var enabled by mutableStateOf(enabled)
     val interval = TextFieldState(initialText = interval)
+    var selectedProviderId by mutableStateOf(providerId)
+    var selectedModelId by mutableStateOf(modelId)
+
+    val selectedTarget: RequestCompactionTarget?
+        get() = selectedProviderId
+            ?.takeIf { it.isNotBlank() }
+            ?.let { provider ->
+                selectedModelId
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { model -> RequestCompactionTarget(providerId = provider, modelId = model) }
+            }
 
     companion object {
         val Saver = listSaver<RequestCompactionSettingsDraft?, Any>(
             save = { draft ->
-                if (draft == null) emptyList() else listOf(draft.enabled, draft.interval.text.toString())
+                if (draft == null) {
+                    emptyList()
+                } else {
+                    listOf(
+                        draft.enabled,
+                        draft.interval.text.toString(),
+                        draft.selectedProviderId.orEmpty(),
+                        draft.selectedModelId.orEmpty(),
+                    )
+                }
             },
             restore = { values ->
-                if (values.isEmpty()) null else RequestCompactionSettingsDraft(
-                    enabled = values[0] as Boolean,
-                    interval = values[1] as String,
-                )
+                if (values.isEmpty()) {
+                    null
+                } else {
+                    RequestCompactionSettingsDraft(
+                        enabled = values[0] as Boolean,
+                        interval = values[1] as String,
+                        providerId = (values.getOrNull(2) as? String)?.ifBlank { null },
+                        modelId = (values.getOrNull(3) as? String)?.ifBlank { null },
+                    )
+                }
             },
         )
     }
@@ -57,6 +91,7 @@ internal class RequestCompactionSettingsDraft(enabled: Boolean, interval: String
 internal fun RequestCompactionSettingsDialog(
     show: Boolean,
     draft: RequestCompactionSettingsDraft?,
+    providers: List<ProviderSetting>,
     saving: Boolean,
     onDismiss: () -> Unit,
     onDismissFinished: () -> Unit,
@@ -72,6 +107,7 @@ internal fun RequestCompactionSettingsDialog(
     ) {
         if (draft != null) {
             val interval = parseRequestCompactionIntervalInput(draft.interval.text.toString())
+            val validTarget = providers.findEnabledRequestCompactionTarget(draft.selectedTarget)
             val invalidMessage = stringResource(
                 R.string.settings_request_compaction_interval_invalid,
                 Int.MAX_VALUE,
@@ -103,6 +139,24 @@ internal fun RequestCompactionSettingsDialog(
                             .fillMaxWidth()
                             .semantics { if (interval == null) error(invalidMessage) },
                     )
+                    RequestCompactionTargetPicker(
+                        providers = providers,
+                        selectedProviderId = draft.selectedProviderId,
+                        selectedModelId = draft.selectedModelId,
+                        enabled = !saving,
+                        showTargetError = draft.enabled && validTarget == null,
+                        onProviderSelected = { providerId ->
+                            if (draft.selectedProviderId != providerId) {
+                                draft.selectedProviderId = providerId
+                                draft.selectedModelId = null
+                            }
+                        },
+                        onModelSelected = { modelId -> draft.selectedModelId = modelId },
+                        onClear = {
+                            draft.selectedProviderId = null
+                            draft.selectedModelId = null
+                        },
+                    )
                     Text(
                         text = if (interval == null) invalidMessage else {
                             stringResource(R.string.settings_request_compaction_interval_hint)
@@ -116,18 +170,19 @@ internal fun RequestCompactionSettingsDialog(
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                     RequestCompactionHint(stringResource(R.string.settings_request_compaction_counting_hint))
+                    RequestCompactionHint(stringResource(R.string.settings_request_compaction_model_scope_hint))
                     RequestCompactionHint(stringResource(R.string.settings_request_compaction_behavior_hint))
                     RequestCompactionHint(stringResource(R.string.settings_request_compaction_threshold_hint))
                     RequestCompactionHint(stringResource(R.string.settings_request_compaction_next_run_hint))
                 }
                 DialogActions(
                     confirmText = stringResource(R.string.action_save),
-                    confirmEnabled = show && !saving && interval != null,
+                    confirmEnabled = show && !saving && interval != null && (!draft.enabled || validTarget != null),
                     cancelEnabled = !saving,
                     onCancel = onDismiss,
                     onConfirm = {
                         // Read the field directly, including the latest IME edit, not an async draft copy.
-                        if (show && !saving) {
+                        if (show && !saving && (!draft.enabled || validTarget != null)) {
                             parseRequestCompactionIntervalInput(draft.interval.text.toString())?.let { value ->
                                 onSave(draft, value)
                             }

@@ -80,13 +80,16 @@ class AgentRuntimePolicyTest {
     @Test
     fun requestCompactionRequiresLocalPermissionAndDoesNotDependOnTokenCompaction() {
         for (localEnabled in listOf(false, true)) for (automatic in listOf(false, true)) {
-            val preferences = booleanPreferences { key, default ->
-                when (key) {
-                    Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED -> localEnabled
-                    Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED -> automatic
-                    else -> default
-                }
-            }
+            val preferences = booleanPreferences(
+                getBoolean = { key, default ->
+                    when (key) {
+                        Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED -> localEnabled
+                        Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED -> automatic
+                        else -> default
+                    }
+                },
+                targetJson = requestCompactionTargetJson(),
+            )
             val permissions = AgentRuntimePolicy.permissions(preferences)
             for (requested in listOf(false, true)) {
                 val config = modelConfig(false, false, false).copy(
@@ -103,6 +106,39 @@ class AgentRuntimePolicyTest {
     }
 
     @Test
+    fun requestCompactionRequiresExactProviderAndModelTarget() {
+        val config = modelConfig(false, false, false).copy(
+            requestCompactionEnabled = true,
+            subagentTools = false,
+        )
+        val targets: List<Pair<String?, Boolean>> = listOf(
+            null to false,
+            requestCompactionTargetJson() to true,
+            requestCompactionTargetJson(providerId = "provider-b") to false,
+            requestCompactionTargetJson(modelId = "other-model") to false,
+        )
+
+        for (localEnabled in listOf(false, true)) {
+            for ((targetJson, targetMatches) in targets) {
+                val permissions = AgentRuntimePolicy.permissions(
+                    booleanPreferences(
+                        getBoolean = { key, default ->
+                            if (key == Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED) localEnabled else default
+                        },
+                        targetJson = targetJson,
+                    )
+                )
+                val constrained = AgentRuntimePolicy.constrain(config, permissions)
+
+                assertEquals(localEnabled && targetMatches, constrained.requestCompactionEnabled)
+                assertEquals(config.providerId, constrained.providerId)
+                assertEquals(config.model, constrained.model)
+                assertFalse(constrained.subagentTools)
+            }
+        }
+    }
+
+    @Test
     fun requestCompactionIntervalIsAlwaysChosenLocallyAndInvalidLocalValuesFallBack() {
         for (localInterval in listOf(1, 137, Int.MAX_VALUE, 0, -1, Int.MIN_VALUE)) {
             val preferences = Proxy.newProxyInstance(
@@ -111,6 +147,11 @@ class AgentRuntimePolicyTest {
                 when (method.name) {
                     "getInt" -> localInterval
                     "getBoolean" -> if (args?.get(0) == Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED) true else args?.get(1)
+                    "getString" -> if (args?.get(0) == Prefs.Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON) {
+                        requestCompactionTargetJson()
+                    } else {
+                        args?.get(1)
+                    }
                     else -> error("Unexpected SharedPreferences method: ${method.name}")
                 }
             } as SharedPreferences
@@ -260,6 +301,7 @@ class AgentRuntimePolicyTest {
         thinking: Boolean,
     ): AgentModelClient.ModelConfig =
         AgentModelClient.ModelConfig(
+            providerId = "provider-a",
             baseUrl = "https://example.invalid/v1",
             apiKey = "test-key",
             model = "test-model",
@@ -269,8 +311,14 @@ class AgentRuntimePolicyTest {
             thinkingEnabled = thinking,
         )
 
+    private fun requestCompactionTargetJson(
+        providerId: String = "provider-a",
+        modelId: String = "test-model",
+    ): String = """{"providerId":"$providerId","modelId":"$modelId"}"""
+
     private fun booleanPreferences(
         getBoolean: (key: String, default: Boolean) -> Boolean,
+        targetJson: String? = null,
     ): SharedPreferences =
         Proxy.newProxyInstance(
             javaClass.classLoader,
@@ -282,6 +330,11 @@ class AgentRuntimePolicyTest {
                     arguments[1] as Boolean,
                 )
                 "getInt" -> arguments?.get(1)
+                "getString" -> if (arguments?.get(0) == Prefs.Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON) {
+                    targetJson ?: arguments[1]
+                } else {
+                    arguments?.get(1)
+                }
                 "equals" -> proxy === arguments?.firstOrNull()
                 "hashCode" -> System.identityHashCode(proxy)
                 "toString" -> "BooleanSharedPreferences"

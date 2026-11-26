@@ -69,6 +69,7 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.voice.AssistantRoleHelper
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.config.RequestCompactionTarget
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.provider.BuiltinProviders
@@ -235,6 +236,9 @@ private fun SettingsPageContent(
     var requestCompactionSettings by remember(agentPrefs) {
         mutableStateOf(readRequestCompactionSettings(agentPrefs))
     }
+    val requestCompactionTargetDetails = remember(providers, requestCompactionSettings.target) {
+        providers.findEnabledRequestCompactionTarget(requestCompactionSettings.target)
+    }
     var requestCompactionDraft by rememberSaveable(stateSaver = RequestCompactionSettingsDraft.Saver) {
         mutableStateOf<RequestCompactionSettingsDraft?>(null)
     }
@@ -248,6 +252,7 @@ private fun SettingsPageContent(
                 null,
                 Prefs.Keys.AGENT_REQUEST_COMPACTION_ENABLED,
                 Prefs.Keys.AGENT_REQUEST_COMPACTION_INTERVAL,
+                Prefs.Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON,
                 -> if (!requestCompactionSaving) {
                     // Do not publish the in-memory edit before the disk commit finishes.
                     requestCompactionSettings = readRequestCompactionSettings(changedPrefs)
@@ -261,17 +266,31 @@ private fun SettingsPageContent(
     val openRequestCompactionSettings: () -> Unit = {
         val latest = readRequestCompactionSettings(agentPrefs)
         requestCompactionSettings = latest
-        requestCompactionDraft = RequestCompactionSettingsDraft(latest.enabled, latest.interval.toString())
+        requestCompactionDraft = RequestCompactionSettingsDraft(
+            enabled = latest.enabled,
+            interval = latest.interval.toString(),
+            target = latest.target,
+        )
     }
     val saveRequestCompactionSettings: (RequestCompactionSettingsDraft, Int) -> Unit = { draft, interval ->
-        if (!requestCompactionSaving && requestCompactionDraft === draft) {
+        if (
+            !requestCompactionSaving &&
+            requestCompactionDraft === draft &&
+            (!draft.enabled || providers.findEnabledRequestCompactionTarget(draft.selectedTarget) != null)
+        ) {
             val enabled = draft.enabled
+            val target = draft.selectedTarget
             requestCompactionSaving = true
             coroutineScope.launch {
                 try {
                     val saved = withContext(Dispatchers.IO) {
                         runCatching {
-                            Prefs.setRequestCompactionSettings(enabled, interval, EtaApp.serviceInstance)
+                            Prefs.setRequestCompactionSettings(
+                                enabled = enabled,
+                                interval = interval,
+                                service = EtaApp.serviceInstance,
+                                target = target,
+                            )
                         }.getOrDefault(false)
                     }
                     if (saved) {
@@ -508,6 +527,7 @@ private fun SettingsPageContent(
             RequestCompactionSettingsDialog(
                 show = requestCompactionDraft != null,
                 draft = requestCompactionDraft ?: retainedRequestCompactionDraft,
+                providers = providers,
                 saving = requestCompactionSaving,
                 onDismiss = { if (!requestCompactionSaving) requestCompactionDraft = null },
                 onDismissFinished = {
@@ -604,10 +624,25 @@ private fun SettingsPageContent(
                 )
                 ArrowPreference(
                     title = stringResource(R.string.settings_request_compaction),
-                    summary = if (requestCompactionSettings.enabled) {
-                        stringResource(R.string.settings_request_compaction_every, requestCompactionSettings.interval)
+                    summary = if (requestCompactionTargetDetails != null) {
+                        val details = requestCompactionTargetDetails
+                        val targetSummary = stringResource(
+                            R.string.settings_request_compaction_target_summary,
+                            details.provider.requestCompactionLabel(providers),
+                            details.model.requestCompactionLabel(details.provider.models),
+                            requestCompactionSettings.interval,
+                        )
+                        if (requestCompactionSettings.enabled) targetSummary else {
+                            stringResource(R.string.settings_request_compaction_off) + " · " + targetSummary
+                        }
                     } else {
-                        stringResource(R.string.settings_request_compaction_off)
+                        val missingSummary = stringResource(
+                            R.string.settings_request_compaction_target_missing_summary,
+                            requestCompactionSettings.interval,
+                        )
+                        if (requestCompactionSettings.enabled) missingSummary else {
+                            stringResource(R.string.settings_request_compaction_off) + " · " + missingSummary
+                        }
                     },
                     startAction = { SettingsIcon(Icons.Rounded.Repeat, enabled = agentPrefs != null) },
                     enabled = agentPrefs != null && !requestCompactionSaving,
@@ -951,7 +986,11 @@ private fun SwitchPref(
     )
 }
 
-private data class RequestCompactionSettingsValues(val enabled: Boolean, val interval: Int)
+private data class RequestCompactionSettingsValues(
+    val enabled: Boolean,
+    val interval: Int,
+    val target: RequestCompactionTarget?,
+)
 
 private fun readRequestCompactionSettings(preferences: SharedPreferences?): RequestCompactionSettingsValues =
     RequestCompactionSettingsValues(
@@ -963,6 +1002,7 @@ private fun readRequestCompactionSettings(preferences: SharedPreferences?): Requ
         } else {
             Prefs.requestCompactionInterval(preferences)
         },
+        target = Prefs.requestCompactionTarget(preferences),
     )
 
 private fun putBooleanSync(

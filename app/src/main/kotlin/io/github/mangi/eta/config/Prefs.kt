@@ -8,7 +8,14 @@ import io.github.mangi.eta.agent.model.catalog.AgentFileToolCatalog
 import io.github.mangi.eta.agent.model.catalog.AgentPhoneToolCatalog
 import io.github.mangi.eta.agent.model.catalog.AgentTerminalToolCatalog
 import io.github.mangi.eta.data.model.ReasoningEffort
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.json.JSONArray
+
+/** Exact supplier-instance ID and Model.modelId API string, never a display name. */
+internal data class RequestCompactionTarget(val providerId: String, val modelId: String)
 
 /**
  * 模块配置中枢。
@@ -31,6 +38,10 @@ internal object Prefs {
     private const val LOCAL_AGENT_GROUP = "eta_agent_preferences"
 
     const val DEFAULT_REQUEST_COMPACTION_INTERVAL = 95
+    private const val MAX_REQUEST_COMPACTION_TARGET_ID_LENGTH = 4096
+    // Each UTF-16 code unit may be JSON-escaped as six characters, plus the object keys.
+    private const val MAX_REQUEST_COMPACTION_TARGET_JSON_LENGTH = 12 * MAX_REQUEST_COMPACTION_TARGET_ID_LENGTH + 128
+    private const val REQUEST_COMPACTION_NO_TARGET_JSON = "{\"version\":1,\"target\":null}"
 
     /** 所有功能开关 key。默认值按功能风险独立定义。 */
     object Keys {
@@ -50,6 +61,7 @@ internal object Prefs {
         const val AGENT_AUTO_COMPACTION_ENABLED = "agent_auto_compaction_enabled"
         const val AGENT_REQUEST_COMPACTION_ENABLED = "agent_request_compaction_enabled"
         const val AGENT_REQUEST_COMPACTION_INTERVAL = "agent_request_compaction_interval"
+        const val AGENT_REQUEST_COMPACTION_TARGET_JSON = "agent_request_compaction_target_json"
         const val AGENT_SUBAGENT_ENABLED = "agent_subagent_enabled"
         const val AGENT_VIRTUAL_DISPLAY_ENABLED = "agent_virtual_display_enabled"
         const val AGENT_KEEP_SCREEN_ON_ENABLED = "agent_keep_screen_on_enabled"
@@ -154,9 +166,47 @@ internal object Prefs {
         preferences?.getInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, DEFAULT_REQUEST_COMPACTION_INTERVAL)
     }.getOrNull()?.takeIf { it > 0 } ?: DEFAULT_REQUEST_COMPACTION_INTERVAL
 
+    /** Missing, corrupt or incorrectly typed targets never match any provider/model. */
+    fun requestCompactionTarget(
+        preferences: SharedPreferences? = localAgent ?: remote,
+    ): RequestCompactionTarget? = runCatching {
+        val raw = preferences?.getString(Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON, null)
+            ?: return null
+        if (raw.isBlank() || raw.length > MAX_REQUEST_COMPACTION_TARGET_JSON_LENGTH) return null
+        val json = Json.parseToJsonElement(raw) as? JsonObject ?: return null
+        if (json["target"] == JsonNull) return null
+        fun string(key: String): String? = (json[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val target = RequestCompactionTarget(
+            providerId = string("providerId") ?: return null,
+            modelId = string("modelId") ?: return null,
+        )
+        target.takeIf(::isValidRequestCompactionTarget)
+    }.getOrNull()
+
+    fun requestCompactionTargetMatches(
+        providerId: String,
+        modelId: String,
+        preferences: SharedPreferences? = localAgent ?: remote,
+    ): Boolean = requestCompactionTarget(preferences)?.let {
+        it.providerId == providerId && it.modelId == modelId
+    } ?: false
+
+    private fun isValidRequestCompactionTarget(target: RequestCompactionTarget): Boolean =
+        listOf(target.providerId, target.modelId).all {
+            it.isNotBlank() && it.length <= MAX_REQUEST_COMPACTION_TARGET_ID_LENGTH
+        }
+
+    private fun encodeRequestCompactionTarget(target: RequestCompactionTarget?): String = target?.let {
+        JsonObject(mapOf("providerId" to JsonPrimitive(it.providerId), "modelId" to JsonPrimitive(it.modelId))).toString()
+    } ?: REQUEST_COMPACTION_NO_TARGET_JSON
+
+    private fun SharedPreferences.Editor.putRequestCompactionTarget(encoded: String): SharedPreferences.Editor =
+        putString(Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON, encoded)
+
     /**
      * 本地提交成功即视为保存成功；Hook 配置仅作尽力同步，不影响本地事实源。
-     * 提交失败会恢复两键的旧内存状态并返回 false；回滚也不保证磁盘持久化成功。
+     * 省略 target 时不改动现有目标键，保持旧调用对“从未配置”的兼容性；显式传 null
+     * 写入持久化 tombstone，避免远端旧值在重试或 reconcile 时复活。
      */
     fun setRequestCompactionSettings(
         enabled: Boolean,
@@ -165,16 +215,60 @@ internal object Prefs {
     ): Boolean {
         if (interval <= 0) return false
         val local = localAgent ?: return false
+        val encodedTarget = runCatching {
+            if (local.contains(Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON)) {
+                encodeRequestCompactionTarget(requestCompactionTarget(local))
+            } else {
+                null
+            }
+        }.getOrElse { return false }
+        return setRequestCompactionSettingsInternal(
+            enabled = enabled,
+            interval = interval,
+            service = service,
+            encodedTarget = encodedTarget,
+        )
+    }
+
+    fun setRequestCompactionSettings(
+        enabled: Boolean,
+        interval: Int,
+        service: XposedService? = null,
+        target: RequestCompactionTarget?,
+    ): Boolean {
+        if (target != null && !isValidRequestCompactionTarget(target)) return false
+        return setRequestCompactionSettingsInternal(
+            enabled = enabled,
+            interval = interval,
+            service = service,
+            encodedTarget = runCatching { encodeRequestCompactionTarget(target) }.getOrElse { return false },
+        )
+    }
+
+    private fun setRequestCompactionSettingsInternal(
+        enabled: Boolean,
+        interval: Int,
+        service: XposedService?,
+        encodedTarget: String?,
+    ): Boolean {
+        if (interval <= 0) return false
+        val local = localAgent ?: return false
         val committed = synchronized(local) {
-            // 只快照这两个键；损坏类型也原样保留，不能用 getAll() 读取其他配置。
+            // 只快照这三个键；损坏类型也原样保留，不能用 getAll() 读取其他配置。
             val previous = runCatching {
-                listOf(Keys.AGENT_REQUEST_COMPACTION_ENABLED, Keys.AGENT_REQUEST_COMPACTION_INTERVAL)
-                    .associateWith { snapshotPreference(local, it) }
+                listOf(
+                    Keys.AGENT_REQUEST_COMPACTION_ENABLED,
+                    Keys.AGENT_REQUEST_COMPACTION_INTERVAL,
+                    Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON,
+                ).associateWith { snapshotPreference(local, it) }
             }.getOrElse { return false }
             val saved = runCatching {
                 local.edit()
                     .putBoolean(Keys.AGENT_REQUEST_COMPACTION_ENABLED, enabled)
                     .putInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, interval)
+                    .apply {
+                        if (encodedTarget != null) putRequestCompactionTarget(encodedTarget)
+                    }
                     .commit()
             }.getOrDefault(false)
             if (!saved) {
@@ -195,6 +289,9 @@ internal object Prefs {
                 remotePreferencesForUi(service)?.edit()
                     ?.putBoolean(Keys.AGENT_REQUEST_COMPACTION_ENABLED, enabled)
                     ?.putInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, interval)
+                    ?.apply {
+                        if (encodedTarget != null) putRequestCompactionTarget(encodedTarget)
+                    }
                     ?.commit()
             }
         }
@@ -327,6 +424,17 @@ internal object Prefs {
             }
             remotePreferences.contains(Keys.AGENT_REQUEST_COMPACTION_INTERVAL) -> {
                 localEditor.putInt(Keys.AGENT_REQUEST_COMPACTION_INTERVAL, requestCompactionInterval(remotePreferences))
+                updateLocal = true
+            }
+        }
+        // Structured String target is not part of the Boolean protocol; invalid data stays fail-closed.
+        when {
+            local.contains(Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON) -> {
+                remoteEditor.putRequestCompactionTarget(encodeRequestCompactionTarget(requestCompactionTarget(local)))
+                updateRemote = true
+            }
+            remotePreferences.contains(Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON) -> {
+                localEditor.putRequestCompactionTarget(encodeRequestCompactionTarget(requestCompactionTarget(remotePreferences)))
                 updateLocal = true
             }
         }

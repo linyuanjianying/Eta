@@ -5,6 +5,7 @@ import io.github.mangi.eta.data.model.ReasoningEffort
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PrefsDefaultsTest {
@@ -61,6 +62,15 @@ class PrefsDefaultsTest {
         assertEquals(95, Prefs.requestCompactionInterval(null))
         assertFalse(Prefs.Keys.BOOLEAN_DEFAULTS.containsKey(Prefs.Keys.AGENT_REQUEST_COMPACTION_INTERVAL))
         assertFalse(Prefs.Keys.LOCAL_AGENT_KEYS.contains(Prefs.Keys.AGENT_REQUEST_COMPACTION_INTERVAL))
+    }
+
+    @Test
+    fun requestCompactionTargetDefaultsToNullAndNeverEntersBooleanKeys() {
+        assertEquals("agent_request_compaction_target_json", Prefs.Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON)
+        assertNull(Prefs.requestCompactionTarget(null))
+        assertFalse(Prefs.requestCompactionTargetMatches("provider-instance", "api-model-id", null))
+        assertFalse(Prefs.Keys.BOOLEAN_DEFAULTS.containsKey(Prefs.Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON))
+        assertFalse(Prefs.Keys.LOCAL_AGENT_KEYS.contains(Prefs.Keys.AGENT_REQUEST_COMPACTION_TARGET_JSON))
     }
 
     @Test
