@@ -317,8 +317,8 @@ class AgentRuntimePolicyTest {
     ): String = """{"providerId":"$providerId","modelId":"$modelId"}"""
 
     private fun booleanPreferences(
-        getBoolean: (key: String, default: Boolean) -> Boolean,
         targetJson: String? = null,
+        getBoolean: (key: String, default: Boolean) -> Boolean,
     ): SharedPreferences =
         Proxy.newProxyInstance(
             javaClass.classLoader,
