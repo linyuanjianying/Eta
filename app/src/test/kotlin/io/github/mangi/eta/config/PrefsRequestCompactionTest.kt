@@ -26,7 +26,7 @@ class PrefsRequestCompactionTest {
 
     @Before
     fun setUp() {
-        val context = RuntimeEnvironment.getApplication<android.app.Application>()
+        val context = RuntimeEnvironment.getApplication()
         local = context.getSharedPreferences("request-compaction-local-test", Context.MODE_PRIVATE)
         remote = context.getSharedPreferences("request-compaction-remote-test", Context.MODE_PRIVATE)
         local.edit().clear().commit()

@@ -31,7 +31,7 @@ class RuntimeConfigRepositoryRequestCompactionTest {
 
     @Before
     fun setUp() {
-        val context = RuntimeEnvironment.getApplication<android.app.Application>()
+        val context = RuntimeEnvironment.getApplication()
         preferences = context.getSharedPreferences("runtime-request-compaction-test", Context.MODE_PRIVATE)
         preferences.edit().clear().commit()
         savedLocalPreferences = localPreferencesField().get(Prefs)
