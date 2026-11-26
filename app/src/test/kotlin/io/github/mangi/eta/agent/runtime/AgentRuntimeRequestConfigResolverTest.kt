@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.runtime
 
 import io.github.mangi.eta.agent.model.provider.AgentModelClient
+import io.github.mangi.eta.config.RequestCompactionTarget
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
@@ -137,6 +138,8 @@ class AgentRuntimeRequestConfigResolverTest {
                 )
                 val entry = local.copy(requestCompactionEnabled = requested, requestCompactionInterval = 1)
                 val resolved = AgentRuntimeRequestConfigResolver.applyRuntimeConfig(request(source, entry), local).config
+                assertEquals(local.providerId, resolved.providerId)
+                assertEquals(local.model, resolved.model)
                 assertEquals(localEnabled && requested, resolved.requestCompactionEnabled)
                 assertEquals(151, resolved.requestCompactionInterval)
                 assertFalse(resolved.autoCompactionEnabled)
@@ -146,10 +149,16 @@ class AgentRuntimeRequestConfigResolverTest {
                         AgentRuntimePolicy.Permissions(
                             terminalTools = false, browserTools = false,
                             requestCompaction = permitted, requestCompactionInterval = 777,
+                            requestCompactionTarget = RequestCompactionTarget(
+                                providerId = resolved.providerId,
+                                modelId = resolved.model,
+                            ),
                         ),
                     )
                     assertEquals(localEnabled && requested && permitted, constrained.requestCompactionEnabled)
                     assertEquals(777, constrained.requestCompactionInterval)
+                    assertEquals(resolved.providerId, constrained.providerId)
+                    assertEquals(resolved.model, constrained.model)
                 }
             }
         }
